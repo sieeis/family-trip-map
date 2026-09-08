@@ -15,6 +15,7 @@ let _infoWindow = null;
 let _onMarkerClick = null;
 
 export const MapModule = {
+  get _map() { return _map; },
   init(containerId) {
     _map = new naver.maps.Map(containerId, {
       center: new naver.maps.LatLng(36.5, 127.5), // 한국 중심
