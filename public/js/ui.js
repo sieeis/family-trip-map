@@ -260,7 +260,7 @@ export const UI = {
         const data = await Parser.fetchPlaceData(url);
         parseBtn.disabled = false;
 
-        if (data) {
+        if (data && !data.error) {
           document.getElementById('pf-name').value = data.name || '';
           document.getElementById('pf-address').value = data.address || '';
           document.getElementById('pf-phone').value = data.phone || '';
@@ -274,7 +274,7 @@ export const UI = {
         } else {
           document.getElementById('pf-naverurl').value = url;
           status.className = 'parse-status error';
-          status.textContent = '⚠️ 정보를 가져오지 못했습니다. 직접 입력해주세요.';
+          status.textContent = `⚠️ ${data?.message || '장소 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'}`;
         }
       });
     }
