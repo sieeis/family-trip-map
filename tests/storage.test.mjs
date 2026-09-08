@@ -32,6 +32,10 @@ test('independent devices share writes, keep failed drafts off server and preser
   const { Storage: second } = await import('../public/js/storage.js?second');
   await first.refresh();
   await second.refresh();
+  await assert.rejects(() => first.addGroup({ name: 'locked' }), /자물쇠/);
+  assert.equal(server.groups.length, 0);
+  first.setEditing(true);
+  second.setEditing(true);
   const group = await first.addGroup({ name: '함께 여행' });
   await assert.rejects(() => second.addGroup({ name: 'stale draft' }), /conflict/);
   assert.equal(second.getGroups()[0].name, '함께 여행');
@@ -57,4 +61,7 @@ test('independent devices share writes, keep failed drafts off server and preser
   await second.refresh();
   assert.equal(second.getPlaces().length, 0);
   assert.equal(second.getGroups()[0].id, 'legacy');
+  first.setEditing(false);
+  await assert.rejects(() => first.deleteGroup('legacy'), /자물쇠/);
+  assert.equal(server.groups.length, 1);
 });

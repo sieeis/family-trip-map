@@ -24,7 +24,7 @@ function memoryStore() {
 async function call(handler, method, body, headers = {}) {
   const result = {};
   const res = { setHeader() {}, status(status) { result.status = status; return this; }, json(body) { result.body = body; } };
-  await handler({ method, body, headers: { host: 'trips.example', 'content-type': 'application/json', ...headers } }, res);
+  await handler({ method, body, headers: { host: 'trips.example', 'content-type': 'application/json', 'x-trip-edit': '1', ...headers } }, res);
   return result;
 }
 test('a save is visible to an independent visitor and deletion persists', async () => {
@@ -37,6 +37,12 @@ test('a save is visible to an independent visitor and deletion persists', async 
   assert.equal(other.body.places[0].name, '마블오션');
   assert.equal((await call(handler, 'PUT', { groups: [], places: [], revision: other.body.revision })).status, 200);
   assert.deepEqual((await call(handler, 'GET')).body.places, []);
+});
+
+test('requests without explicit edit mode cannot write', async () => {
+  const handler = createTripsHandler(memoryStore());
+  assert.equal((await call(handler, 'PUT', { ...data, revision: null }, { 'x-trip-edit': undefined })).status, 403);
+  assert.deepEqual((await call(handler, 'GET')).body.groups, []);
 });
 test('concurrent creates cannot overwrite the winner', async () => {
   const handler = createTripsHandler(memoryStore());

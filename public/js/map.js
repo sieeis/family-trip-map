@@ -17,16 +17,49 @@ let _map = null;
 let _markers = [];
 let _infoWindow = null;
 let _onMarkerClick = null;
+let _loadPromise = null;
+let _places = [];
+let _signature = '';
+let _positionSignature = '';
 
 export const MapModule = {
   get _map() { return _map; },
+  get loaded() { return _map !== null; },
+  async load(containerId = 'map') {
+    if (_map) return;
+    if (_loadPromise) return _loadPromise;
+    _loadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      const timer = setTimeout(() => fail(new Error('지도를 불러오지 못했습니다. 다시 시도해주세요.')), 15000);
+      const clean = () => { clearTimeout(timer); script.onerror = null; delete window.naverMapReady; };
+      const fail = error => { clean(); script.remove(); reject(error); };
+      window.naverMapReady = () => queueMicrotask(() => {
+        try { this.init(containerId); clean(); resolve(); }
+        catch (error) {
+          console.warn('Map initialization failed', error);
+          _map = null;
+          fail(new Error('지도 초기화에 실패했습니다. 다시 시도해주세요.'));
+        }
+      });
+      window.navermap_authFailure = () => {
+        window.dispatchEvent(new CustomEvent('map-error', { detail: '지도 인증에 실패했습니다.' }));
+      };
+      script.onerror = () => fail(new Error('네이버지도에 연결하지 못했습니다.'));
+      script.src = 'https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId='
+        + encodeURIComponent(window.APP_CONFIG.naverMapClientId) + '&callback=naverMapReady';
+      document.head.appendChild(script);
+    });
+    try { await _loadPromise; } catch (error) { _loadPromise = null; throw error; }
+  },
   init(containerId) {
+    if (_map) return;
     _map = new naver.maps.Map(containerId, {
       center: new naver.maps.LatLng(36.5, 127.5), // 한국 중심
       zoom: 7,
       mapTypeId: naver.maps.MapTypeId.NORMAL,
     });
     _infoWindow = new naver.maps.InfoWindow({ anchorSkew: true });
+    this._renderPlaces();
   },
 
   onMarkerClick(callback) {
@@ -34,22 +67,43 @@ export const MapModule = {
   },
 
   showPlaces(places) {
-    this.clearMarkers();
-    const validPlaces = places.filter(p => p.lat && p.lng);
+    const signature = JSON.stringify(places);
+    if (signature === _signature) return;
+    _signature = signature;
+    _places = places;
+    if (_map) this._renderPlaces();
+  },
+
+  _renderPlaces() {
+    this._clearMarkers();
+    const validPlaces = _places.filter(p => p.lat !== null && p.lng !== null && Number.isFinite(p.lat) && Number.isFinite(p.lng));
     validPlaces.forEach(place => this._addMarker(place));
-    if (validPlaces.length > 0) this._fitBounds(validPlaces);
+    const positions = JSON.stringify(validPlaces.map(p => [p.id, p.lat, p.lng]));
+    if (validPlaces.length > 0 && positions !== _positionSignature) this._fitBounds(validPlaces);
+    _positionSignature = positions;
   },
 
   clearMarkers() {
+    _places = [];
+    _signature = '';
+    _positionSignature = '';
+    this._clearMarkers();
+  },
+
+  _clearMarkers() {
     _markers.forEach(m => m.setMap(null));
     _markers = [];
     if (_infoWindow) _infoWindow.close();
   },
 
   panToPlace(place) {
-    if (!place.lat || !place.lng) return;
+    if (!_map || !Number.isFinite(place.lat) || !Number.isFinite(place.lng)) return;
     _map.panTo(new naver.maps.LatLng(place.lat, place.lng));
     _map.setZoom(15);
+  },
+
+  resize() {
+    if (_map) naver.maps.Event.trigger(_map, 'resize');
   },
 
   _addMarker(place) {

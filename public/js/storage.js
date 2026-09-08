@@ -6,6 +6,7 @@ let state = { groups: [], places: [], revision: null };
 let ready = false;
 let busy = false;
 let loading = null;
+let editing = false;
 
 async function api(options = {}) {
   let response;
@@ -28,6 +29,7 @@ async function api(options = {}) {
 }
 
 async function mutate(update) {
+  if (!editing) throw new Error('자물쇠를 눌러 편집 모드를 켜주세요.');
   if (!ready) throw new Error('공유 데이터를 먼저 불러와주세요. 상단 새로고침 버튼을 눌러주세요.');
   if (busy) throw new Error('다른 저장 작업을 처리 중입니다. 잠시 후 다시 시도해주세요.');
   busy = true;
@@ -35,7 +37,8 @@ async function mutate(update) {
     if (loading) await loading;
     const next = structuredClone(state);
     const result = update(next);
-    state = await api({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next) });
+    if (!editing) throw new Error('편집 모드가 잠겨 있습니다.');
+    state = await api({ method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Trip-Edit': '1' }, body: JSON.stringify(next) });
     return result;
   } catch (error) {
     if (error.status === 409) {
@@ -47,6 +50,8 @@ async function mutate(update) {
 }
 
 export const Storage = {
+  setEditing(value) { editing = value === true; },
+  get isSaving() { return busy; },
   async refresh() {
     if (busy) return false;
     if (loading) return loading;

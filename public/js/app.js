@@ -7,11 +7,12 @@ const state = {
   currentGroupId: null,
   filterCategory: '',
   filterTag: '',
+  editing: false,
 };
 
 export const App = {
   async init() {
-    MapModule.init('map');
+    this.setEditing(false);
     MapModule.onMarkerClick((place) => {
       // 지도 마커 클릭 시 장소 목록에서 해당 아이템 하이라이트
       document.querySelectorAll('.place-item').forEach(el =>
@@ -21,10 +22,14 @@ export const App = {
     this._bindHeader();
     this._bindMobileTabs();
     this._bindFilters();
+    this._bindPanels();
+    document.getElementById('btn-load-map').addEventListener('click', () => this.showMap());
+    window.addEventListener('map-error', event => UI.showToast(event.detail, 'error'));
 
     document.getElementById('btn-migrate').hidden = !Storage.hasLegacyData();
     document.getElementById('btn-sync').addEventListener('click', () => this.sync());
     document.getElementById('btn-migrate').addEventListener('click', async () => {
+      if (!state.editing) return;
       const button = document.getElementById('btn-migrate');
       button.disabled = true;
       try {
@@ -49,8 +54,56 @@ export const App = {
     const status = document.getElementById('sync-status');
     try {
       if (await Storage.refresh()) this.renderShared();
-      status.textContent = '공유 중 · 15초마다 갱신';
-    } catch (error) { status.textContent = error.message; }
+      status.textContent = '';
+      status.hidden = true;
+    } catch (error) { status.textContent = error.message; status.hidden = false; }
+  },
+
+  setEditing(value) {
+    if (Storage.isSaving) { UI.showToast('저장이 끝난 후 전환해주세요.'); return; }
+    state.editing = value;
+    Storage.setEditing(value);
+    UI.setEditing(value);
+    document.body.dataset.editing = String(value);
+    const button = document.getElementById('btn-edit-mode');
+    button.textContent = value ? '🔓' : '🔒';
+    button.setAttribute('aria-pressed', String(value));
+    button.setAttribute('aria-label', value ? '편집 잠그기' : '편집 잠금 해제');
+    button.title = value ? '편집 잠그기' : '편집 잠금 해제';
+  },
+
+  async showMap() {
+    const button = document.getElementById('btn-load-map');
+    const placeholder = document.getElementById('map-placeholder');
+    const map = document.getElementById('map');
+    button.disabled = true;
+    button.textContent = '불러오는 중…';
+    map.hidden = false;
+    try {
+      await MapModule.load('map');
+      placeholder.hidden = true;
+      MapModule.resize();
+    } catch (error) {
+      map.hidden = true;
+      UI.showToast(error.message, 'error');
+    } finally { button.disabled = false; button.textContent = '지도 보기'; }
+  },
+
+  _bindPanels() {
+    const layout = document.querySelector('.app-layout');
+    for (const name of ['groups', 'places']) {
+      const button = document.getElementById(`btn-toggle-${name}`);
+      layout.dataset[`${name}Collapsed`] = 'false';
+      button.addEventListener('click', () => {
+        const collapsed = layout.dataset[`${name}Collapsed`] !== 'true';
+        layout.dataset[`${name}Collapsed`] = String(collapsed);
+        button.setAttribute('aria-expanded', String(!collapsed));
+        button.setAttribute('aria-label', `${name === 'groups' ? '그룹' : '장소'} 목록 ${collapsed ? '펼치기' : '접기'}`);
+        button.title = button.getAttribute('aria-label');
+        button.textContent = collapsed ? '›' : '‹';
+        requestAnimationFrame(() => MapModule.resize());
+      });
+    }
   },
 
   renderShared() {
@@ -73,7 +126,12 @@ export const App = {
     const groups = Storage.getGroups();
     UI.renderGroups(groups, state.currentGroupId, {
       onSelect: (id) => this.selectGroup(id),
+      onDetails: (id) => {
+        const group = Storage.getGroups().find(g => g.id === id);
+        if (group) UI.showGroupDetails(group);
+      },
       onEdit: (id) => {
+        if (!state.editing) return;
         const group = Storage.getGroups().find(g => g.id === id);
         UI.showGroupModal(group, async (data) => {
           await Storage.updateGroup(id, data);
@@ -83,6 +141,7 @@ export const App = {
         });
       },
       onDelete: async (id) => {
+        if (!state.editing) return;
         const group = Storage.getGroups().find(g => g.id === id);
         const ok = await UI.showConfirm(`"${group?.name}" 그룹과 모든 장소를 삭제할까요?`);
         if (!ok) return;
@@ -132,9 +191,10 @@ export const App = {
     UI.renderPlaces(places, {
       onSelect: (id) => {
         const place = Storage.getPlaces().find(p => p.id === id);
-        if (place) MapModule.panToPlace(place);
+        if (place) { UI.showPlaceDetails(place); MapModule.panToPlace(place); }
       },
       onEdit: (id) => {
+        if (!state.editing) return;
         const place = Storage.getPlaces().find(p => p.id === id);
         UI.showPlaceModal(state.currentGroupId, place, async (data) => {
           await Storage.updatePlace(id, data);
@@ -145,6 +205,7 @@ export const App = {
         });
       },
       onDelete: async (id) => {
+        if (!state.editing) return;
         const place = Storage.getPlaces().find(p => p.id === id);
         const ok = await UI.showConfirm(`"${place?.name}" 장소를 삭제할까요?`);
         if (!ok) return;
@@ -164,7 +225,15 @@ export const App = {
 
   // ── 헤더 버튼 ───────────────────────────────────
   _bindHeader() {
+    document.getElementById('btn-edit-mode').addEventListener('click', () => {
+      if (Storage.isSaving) { UI.showToast('저장이 끝난 후 전환해주세요.'); return; }
+      UI.closeModal();
+      this.setEditing(!state.editing);
+      this.renderGroups();
+      this.renderPlaces();
+    });
     document.getElementById('btn-add-group').addEventListener('click', () => {
+      if (!state.editing) return;
       UI.showGroupModal(null, async (data) => {
         const group = await Storage.addGroup(data);
         this.renderGroups();
@@ -174,7 +243,7 @@ export const App = {
     });
 
     document.getElementById('btn-add-place').addEventListener('click', () => {
-      if (!state.currentGroupId) return;
+      if (!state.editing || !state.currentGroupId) return;
       UI.showPlaceModal(state.currentGroupId, null, async (data) => {
         await Storage.addPlace(data);
         this.renderPlaces();
@@ -182,19 +251,32 @@ export const App = {
       });
     });
 
-    document.getElementById('btn-export').addEventListener('click', () => {
-      let json;
-      try { json = Storage.exportData(); }
-      catch (error) { UI.showToast(error.message, 'error'); return; }
-      const blob = new Blob([json], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `여행지_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      UI.showToast('데이터를 내보냈습니다.');
+    document.getElementById('btn-export').addEventListener('click', async () => {
+      const format = await UI.showExportOptions();
+      if (!format) return;
+      const button = document.getElementById('btn-export');
+      button.disabled = true;
+      try {
+        const response = await fetch(`/api/export?format=${encodeURIComponent(format)}`, { signal: AbortSignal.timeout(45000) });
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || '내보내기에 실패했습니다.');
+        }
+        const url = URL.createObjectURL(await response.blob());
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `여행지_${new Date().toISOString().slice(0, 10)}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        UI.showToast('내보내기 완료');
+      } catch (error) { UI.showToast(error.message || '내보내기에 실패했습니다.', 'error'); }
+      finally { button.disabled = false; }
     });
 
     document.getElementById('btn-import-file').addEventListener('change', async (e) => {
+      if (!state.editing) { e.target.value = ''; return; }
       const file = e.target.files[0];
       if (!file) return;
       const text = await file.text();
@@ -236,14 +318,12 @@ export const App = {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         layout.dataset.tab = btn.dataset.tab;
-        // 지도 탭 전환 시 지도 리사이즈
         if (btn.dataset.tab === 'map') {
-          setTimeout(() => {
-            if (window.naver?.maps) naver.maps.Event.trigger(MapModule._map || {}, 'resize');
-          }, 50);
+          if (MapModule.loaded) requestAnimationFrame(() => MapModule.resize());
         }
       });
     });
-    layout.dataset.tab = 'map';
+    layout.dataset.tab = 'list';
+    document.querySelectorAll('.tab-btn').forEach(button => button.classList.toggle('active', button.dataset.tab === 'list'));
   },
 };

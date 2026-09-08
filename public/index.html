@@ -8,7 +8,7 @@
   <!-- Pretendard 폰트 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
 </head>
-<body>
+<body data-editing="false">
 
   <!-- 헤더 -->
   <header class="app-header">
@@ -17,25 +17,18 @@
       <h1 class="app-title">가족 여행지 지도</h1>
     </div>
     <div class="header-right">
-      <button id="btn-add-group" class="btn btn-primary">+ 그룹 추가</button>
+      <span id="sync-status" role="status" aria-live="polite"></span>
+      <button id="btn-sync" class="btn btn-ghost">새로고침</button>
+      <button id="btn-edit-mode" class="btn btn-ghost" aria-pressed="false" title="편집 잠금 해제" aria-label="편집 잠금 해제">🔒</button>
+      <button id="btn-migrate" class="btn btn-ghost" data-edit-only hidden>기존 데이터 공유</button>
+      <button data-edit-only id="btn-add-group" class="btn btn-primary">+ 그룹 추가</button>
       <button id="btn-export" class="btn btn-ghost">📤 내보내기</button>
-      <label class="btn btn-ghost" style="cursor:pointer;">
+      <label data-edit-only class="btn btn-ghost" style="cursor:pointer;">
         📥 가져오기
         <input type="file" id="btn-import-file" accept=".json" style="display:none;" />
       </label>
     </div>
   </header>
-  <section class="shared-toolbar" aria-label="공유 데이터">
-    <div class="shared-toolbar-info">
-      <p class="shared-notice">함께 쓰는 여행 지도 · 링크로 접속한 모두가 조회·추가·수정·삭제할 수 있습니다.</p>
-      <span id="sync-status" role="status" aria-live="polite">공유 데이터 불러오는 중…</span>
-    </div>
-    <div class="shared-toolbar-actions">
-      <button id="btn-sync" class="btn btn-sm btn-ghost">새로고침</button>
-      <button id="btn-migrate" class="btn btn-sm btn-ghost" hidden>이 기기의 기존 데이터 공유</button>
-    </div>
-  </section>
-
   <!-- 메인 레이아웃 -->
   <main class="app-layout">
 
@@ -43,18 +36,23 @@
     <aside class="panel panel-groups" id="panel-groups">
       <div class="panel-header">
         <span class="panel-title">여행 그룹</span>
+        <button id="btn-toggle-groups" class="btn-icon panel-toggle" aria-controls="group-content" aria-expanded="true" aria-label="여행 그룹 접기" title="여행 그룹 접기">⇆</button>
       </div>
+      <div class="panel-content" id="group-content">
       <ul class="group-list" id="group-list">
         <!-- JS로 렌더링 -->
       </ul>
+      </div>
     </aside>
 
     <!-- 중앙: 장소 목록 -->
     <aside class="panel panel-places" id="panel-places">
       <div class="panel-header">
         <span class="panel-title" id="current-group-name">그룹을 선택하세요</span>
-        <button id="btn-add-place" class="btn btn-sm btn-primary" style="display:none;">+ 장소</button>
+        <button data-edit-only id="btn-add-place" class="btn btn-sm btn-primary" style="display:none;">+ 장소</button>
+        <button id="btn-toggle-places" class="btn-icon panel-toggle" aria-controls="place-content" aria-expanded="true" aria-label="장소 목록 접기" title="장소 목록 접기">⇆</button>
       </div>
+      <div class="panel-content" id="place-content">
       <!-- 필터 -->
       <div class="filter-bar" id="filter-bar" style="display:none;">
         <select id="filter-category" class="filter-select">
@@ -72,11 +70,13 @@
       <ul class="place-list" id="place-list">
         <!-- JS로 렌더링 -->
       </ul>
+      </div>
     </aside>
 
     <!-- 우측: 지도 -->
     <section class="map-container" id="map-container">
-      <div id="map"></div>
+      <div id="map" hidden></div>
+      <div id="map-placeholder" class="map-placeholder"><button id="btn-load-map" class="btn btn-primary">지도 보기</button></div>
     </section>
 
   </main>
@@ -101,16 +101,9 @@
   <!-- config.js: APP_CONFIG 설정 (non-module, 먼저 로드) -->
   <script src="/js/config.js"></script>
 
-  <!-- Naver Maps API 동적 로드 -->
-  <script>
-    window.naverMapInit = function () {
-      import('/js/app.js').then(m => m.App.init());
-    };
-    const s = document.createElement('script');
-    s.src = 'https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId='
-      + window.APP_CONFIG.naverMapClientId
-      + '&callback=naverMapInit';
-    document.head.appendChild(s);
+  <script type="module">
+    import { App } from '/js/app.js';
+    App.init();
   </script>
 
 </body>

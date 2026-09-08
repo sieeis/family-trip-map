@@ -8,13 +8,26 @@ const CATEGORY_EMOJIS = {
 };
 
 export const UI = {
+  _editing: false,
+  _saving: false,
+  setEditing(editing) {
+    this._editing = Boolean(editing);
+    document.body.dataset.editing = String(this._editing);
+    const button = document.getElementById('btn-edit-mode');
+    button.setAttribute('aria-pressed', String(this._editing));
+    button.textContent = this._editing ? '🔓' : '🔒';
+    button.title = this._editing ? '편집 잠금' : '편집 잠금 해제';
+    button.setAttribute('aria-label', button.title);
+    document.querySelectorAll('[data-action][data-edit-only]').forEach(el => { el.hidden = !this._editing; });
+    if (!this._editing && document.getElementById('modal-save-btn')) this.closeModal();
+  },
   // ── 그룹 렌더링 ─────────────────────────────────
   renderGroups(groups, currentGroupId, callbacks) {
     const list = document.getElementById('group-list');
     if (groups.length === 0) {
       list.innerHTML = `<li class="empty-state" style="height:auto;padding:24px 12px;">
         <div class="empty-state-icon">🗺️</div>
-        <div class="empty-state-text">여행 그룹을 추가해보세요</div>
+        <div class="empty-state-text">그룹 없음</div>
       </li>`;
       return;
     }
@@ -25,9 +38,10 @@ export const UI = {
           <div class="group-name">${esc(g.name)}</div>
           <div class="group-meta">${esc(g.region || '')} ${esc(g.startDate ? String(g.startDate).slice(0, 7) : '')}</div>
         </div>
+        <button class="btn-icon group-details" data-action="view-group" data-id="${esc(g.id)}" aria-label="그룹 정보" title="그룹 정보">ⓘ</button>
         <div class="group-actions">
-          <button class="btn-icon" data-action="edit-group" data-id="${esc(g.id)}" title="수정">✏️</button>
-          <button class="btn-icon" data-action="delete-group" data-id="${esc(g.id)}" title="삭제">🗑️</button>
+          <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="edit-group" data-id="${esc(g.id)}" title="수정">✏️</button>
+          <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="delete-group" data-id="${esc(g.id)}" title="삭제">🗑️</button>
         </div>
       </li>
     `).join('');
@@ -38,6 +52,8 @@ export const UI = {
         callbacks.onSelect(el.dataset.id);
       });
     });
+    list.querySelectorAll('[data-action="view-group"]').forEach(el =>
+      el.addEventListener('click', (e) => { e.stopPropagation(); callbacks.onDetails?.(el.dataset.id); }));
     list.querySelectorAll('[data-action="edit-group"]').forEach(el =>
       el.addEventListener('click', (e) => { e.stopPropagation(); callbacks.onEdit(el.dataset.id); }));
     list.querySelectorAll('[data-action="delete-group"]').forEach(el =>
@@ -63,7 +79,7 @@ export const UI = {
     if (places.length === 0) {
       list.innerHTML = `<li class="empty-state">
         <div class="empty-state-icon">📍</div>
-        <div class="empty-state-text">+ 장소 버튼으로<br>장소를 추가해보세요</div>
+        <div class="empty-state-text">장소 없음</div>
       </li>`;
       return;
     }
@@ -72,8 +88,8 @@ export const UI = {
         <div class="place-header">
           <span class="place-name">${esc(CATEGORY_EMOJIS[p.category] || '📌')} ${esc(p.name)}</span>
           <div class="place-actions">
-            <button class="btn-icon" data-action="edit-place" data-id="${esc(p.id)}" title="수정">✏️</button>
-            <button class="btn-icon" data-action="delete-place" data-id="${esc(p.id)}" title="삭제">🗑️</button>
+            <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="edit-place" data-id="${esc(p.id)}" title="수정">✏️</button>
+            <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="delete-place" data-id="${esc(p.id)}" title="삭제">🗑️</button>
           </div>
         </div>
         <span class="place-category">${esc(p.category)}</span>
@@ -97,6 +113,7 @@ export const UI = {
 
   // ── 그룹 모달 ───────────────────────────────────
   showGroupModal(group, onSave) {
+    if (!this._editing || this._saving) return;
     const isEdit = !!group;
     const emojis = ['🗺️','🏯','🌊','🌸','🏔️','🌴','🏙️','🎡','🍁','❄️','☀️','🌿'];
     this._openModal(`
@@ -162,10 +179,11 @@ export const UI = {
 
     document.getElementById('modal-save-btn').addEventListener('click', async (event) => {
       const saveBtn = event.currentTarget;
-      if (saveBtn.disabled) return;
+      if (saveBtn.disabled || !this._editing) return;
       const name = document.getElementById('gf-name').value.trim();
       if (!name) { this.showToast('여행 이름을 입력해주세요.', 'error'); return; }
       saveBtn.disabled = true;
+      this._saving = true;
       try {
         await onSave({
           name,
@@ -176,10 +194,12 @@ export const UI = {
           endDate: document.getElementById('gf-end').value,
           notes: document.getElementById('gf-notes').value.trim(),
         });
+        this._saving = false;
         this.closeModal();
       } catch (error) {
         this.showToast(error.message || '저장하지 못했습니다. 다시 시도해주세요.', 'error');
       } finally {
+        this._saving = false;
         saveBtn.disabled = false;
       }
     });
@@ -187,6 +207,7 @@ export const UI = {
 
   // ── 장소 모달 ───────────────────────────────────
   showPlaceModal(groupId, place, onSave) {
+    if (!this._editing || this._saving) return;
     const isEdit = !!place;
     this._openModal(`
       <div class="modal-header">
@@ -202,7 +223,6 @@ export const UI = {
             <button class="btn btn-primary" id="btn-parse" style="flex-shrink:0;">불러오기</button>
           </div>
           <div id="parse-status" class="parse-status" style="display:none;"></div>
-          <div class="form-hint">링크를 붙여넣고 "불러오기"를 누르면 정보가 자동으로 채워집니다.</div>
         </div>
         <hr style="border:none;border-top:1px solid var(--color-border);margin:16px 0;" />
         ` : ''}
@@ -229,7 +249,6 @@ export const UI = {
         <div class="form-group">
           <label class="form-label">태그</label>
           <input class="form-input" id="pf-tags" value="${esc((place?.tags || []).join(' '))}" placeholder="#바다 #아이랑 #역사" />
-          <div class="form-hint">띄어쓰기로 구분, # 자동 추가</div>
         </div>
         <div class="form-group">
           <label class="form-label">메모</label>
@@ -290,7 +309,7 @@ export const UI = {
 
     document.getElementById('modal-save-btn').addEventListener('click', async (event) => {
       const saveBtn = event.currentTarget;
-      if (saveBtn.disabled) return;
+      if (saveBtn.disabled || !this._editing) return;
       const name = document.getElementById('pf-name').value.trim();
       if (!name) { this.showToast('장소명을 입력해주세요.', 'error'); return; }
 
@@ -298,6 +317,7 @@ export const UI = {
       const tags = tagsRaw.split(/\s+/).filter(Boolean).map(t => t.startsWith('#') ? t : '#' + t);
 
       saveBtn.disabled = true;
+      this._saving = true;
       try {
         await onSave({
           groupId,
@@ -313,10 +333,12 @@ export const UI = {
           lng: parseFloat(document.getElementById('pf-lng').value) || null,
           visited: document.getElementById('pf-visited')?.checked || false,
         });
+        this._saving = false;
         this.closeModal();
       } catch (error) {
         this.showToast(error.message || '저장하지 못했습니다. 다시 시도해주세요.', 'error');
       } finally {
+        this._saving = false;
         saveBtn.disabled = false;
       }
     });
@@ -344,6 +366,7 @@ export const UI = {
   },
 
   showImportOptions() {
+    if (!this._editing) return Promise.resolve(null);
     return new Promise(resolve => {
       this._openModal(`
         <div class="modal-header">
@@ -377,6 +400,57 @@ export const UI = {
     });
   },
 
+  showGroupDetails(group) {
+    this._showDetails(group.name, [
+      ['지역', group.region], ['목적/테마', group.purpose],
+      ['시작일', group.startDate], ['종료일', group.endDate], ['메모', group.notes],
+    ]);
+  },
+
+  showPlaceDetails(place) {
+    this._showDetails(place.name, [
+      ['카테고리', place.category], ['주소', place.address], ['연락처', place.phone],
+      ['태그', (place.tags || []).join(' ')], ['메모', place.notes],
+      ['방문', place.visited ? '방문 완료' : '방문 전'],
+    ], place.naverUrl);
+  },
+
+  _showDetails(title, fields, url) {
+    let link = '';
+    try {
+      const parsed = new URL(url);
+      if (['https:', 'http:'].includes(parsed.protocol)) link = parsed.href;
+    } catch {}
+    this._openModal(`
+      <div class="modal-header"><span class="modal-title">${esc(title)}</span>
+        <button class="modal-close" id="modal-close-btn" aria-label="닫기">✕</button></div>
+      <div class="modal-body"><dl class="detail-list">${fields.filter(([, value]) => value != null && value !== '').map(([label, value]) => `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('')}</dl>
+      ${link ? `<a class="detail-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">네이버 지도에서 보기 ↗</a>` : ''}</div>
+      <div class="modal-footer"><button class="btn btn-ghost" id="modal-cancel-btn">닫기</button></div>
+    `);
+  },
+
+  showExportOptions() {
+    if (this._saving) return Promise.resolve(null);
+    return new Promise(resolve => {
+      this._openModal(`
+        <div class="modal-header"><span class="modal-title">내보내기</span><button class="modal-close" id="modal-close-btn" aria-label="닫기">✕</button></div>
+        <div class="modal-body export-options">
+          <button class="btn btn-primary" data-export="zip">전체 다운로드 (ZIP)</button>
+          <button class="btn btn-ghost" data-export="json">JSON</button>
+          <button class="btn btn-ghost" data-export="md">Markdown (.md)</button>
+          <button class="btn btn-ghost" data-export="xlsx">Excel (.xlsx)</button>
+        </div>
+      `);
+      this._onModalClose = () => resolve(null);
+      document.querySelectorAll('[data-export]').forEach(button => button.addEventListener('click', () => {
+        this._onModalClose = null;
+        resolve(button.dataset.export);
+        this.closeModal();
+      }));
+    });
+  },
+
   // ── 토스트 ──────────────────────────────────────
   showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
@@ -388,10 +462,16 @@ export const UI = {
 
   // ── 모달 헬퍼 ──────────────────────────────────
   closeModal() {
+    if (this._saving) return;
+    const onClose = this._onModalClose;
+    this._onModalClose = null;
+    if (onClose) onClose();
     document.getElementById('modal-overlay').style.display = 'none';
   },
 
   _openModal(html) {
+    if (this._saving) return;
+    this.closeModal();
     document.getElementById('modal-content').innerHTML = html;
     document.getElementById('modal-overlay').style.display = 'flex';
     const closeBtn = document.getElementById('modal-close-btn');
