@@ -318,6 +318,10 @@ export const UI = {
       `);
       document.getElementById('confirm-yes').addEventListener('click', () => { this.closeModal(); resolve(true); });
       document.getElementById('confirm-no').addEventListener('click', () => { this.closeModal(); resolve(false); });
+      // Fix: resolve false when user clicks backdrop
+      document.getElementById('modal-overlay').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('modal-overlay')) resolve(false);
+      }, { once: true });
     });
   },
 
