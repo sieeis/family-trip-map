@@ -154,12 +154,10 @@ export const App = {
       const file = e.target.files[0];
       if (!file) return;
       const text = await file.text();
+      const mode = await UI.showImportOptions();
+      if (!mode) { e.target.value = ''; return; }
       try {
-        // 병합/덮어쓰기 선택
-        const isOverwrite = await UI.showConfirm(
-          '가져오기 방식을 선택해주세요.\n\n[삭제 버튼 = 전체 덮어쓰기]\n[취소 = 기존 데이터 유지하며 추가 병합]'
-        );
-        Storage.importData(text, isOverwrite ? 'overwrite' : 'merge');
+        Storage.importData(text, mode);
         this.renderGroups();
         const groups = Storage.getGroups();
         if (groups.length > 0) this.selectGroup(groups[0].id);

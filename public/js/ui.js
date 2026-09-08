@@ -325,6 +325,40 @@ export const UI = {
     });
   },
 
+  showImportOptions() {
+    return new Promise(resolve => {
+      this._openModal(`
+        <div class="modal-header">
+          <span class="modal-title">가져오기 방식 선택</span>
+          <button class="modal-close" id="modal-close-btn">✕</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:14px;line-height:1.7;margin-bottom:16px;">
+            가져올 데이터를 어떻게 처리할까요?
+          </p>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <button class="btn btn-ghost" id="import-merge" style="text-align:left;padding:12px 16px;">
+              <strong>📥 병합 추가</strong><br>
+              <span style="font-size:12px;color:var(--color-text-secondary);">기존 데이터는 유지하고 새 항목만 추가합니다</span>
+            </button>
+            <button class="btn btn-danger" id="import-overwrite" style="text-align:left;padding:12px 16px;">
+              <strong>🔄 전체 덮어쓰기</strong><br>
+              <span style="font-size:12px;opacity:.85;">기존 데이터를 모두 삭제하고 가져온 데이터로 교체합니다</span>
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" id="modal-cancel-btn">취소</button>
+        </div>
+      `);
+      document.getElementById('import-merge').addEventListener('click', () => { this.closeModal(); resolve('merge'); });
+      document.getElementById('import-overwrite').addEventListener('click', () => { this.closeModal(); resolve('overwrite'); });
+      document.getElementById('modal-overlay').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('modal-overlay')) resolve(null);
+      }, { once: true });
+    });
+  },
+
   // ── 토스트 ──────────────────────────────────────
   showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
