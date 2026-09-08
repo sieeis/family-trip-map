@@ -25,6 +25,16 @@
       </label>
     </div>
   </header>
+  <section class="shared-toolbar" aria-label="공유 데이터">
+    <div class="shared-toolbar-info">
+      <p class="shared-notice">함께 쓰는 여행 지도 · 링크로 접속한 모두가 조회·추가·수정·삭제할 수 있습니다.</p>
+      <span id="sync-status" role="status" aria-live="polite">공유 데이터 불러오는 중…</span>
+    </div>
+    <div class="shared-toolbar-actions">
+      <button id="btn-sync" class="btn btn-sm btn-ghost">새로고침</button>
+      <button id="btn-migrate" class="btn btn-sm btn-ghost" hidden>이 기기의 기존 데이터 공유</button>
+    </div>
+  </section>
 
   <!-- 메인 레이아웃 -->
   <main class="app-layout">

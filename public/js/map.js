@@ -9,6 +9,10 @@ const CATEGORY_COLORS = {
   '기타': '#95A5A6',
 };
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+}
+
 let _map = null;
 let _markers = [];
 let _infoWindow = null;
@@ -69,10 +73,10 @@ export const MapModule = {
     naver.maps.Event.addListener(marker, 'click', () => {
       const content = `
         <div style="padding:12px 16px;min-width:200px;font-family:sans-serif;">
-          <div style="font-weight:700;font-size:15px;margin-bottom:4px;">${place.name}</div>
-          ${place.address ? `<div style="color:#666;font-size:12px;margin-bottom:4px;">${place.address}</div>` : ''}
-          ${place.phone ? `<div style="color:#666;font-size:12px;margin-bottom:8px;">📞 ${place.phone}</div>` : ''}
-          ${place.naverUrl ? `<a href="${place.naverUrl}" target="_blank" rel="noopener"
+          <div style="font-weight:700;font-size:15px;margin-bottom:4px;">${escapeHtml(place.name)}</div>
+          ${place.address ? `<div style="color:#666;font-size:12px;margin-bottom:4px;">${escapeHtml(place.address)}</div>` : ''}
+          ${place.phone ? `<div style="color:#666;font-size:12px;margin-bottom:8px;">📞 ${escapeHtml(place.phone)}</div>` : ''}
+          ${place.naverUrl ? `<a href="${escapeHtml(place.naverUrl)}" target="_blank" rel="noopener"
             style="display:inline-block;padding:6px 12px;background:#03C75A;color:#fff;
             border-radius:6px;font-size:12px;text-decoration:none;">네이버지도에서 열기</a>` : ''}
         </div>`;

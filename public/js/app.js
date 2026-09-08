@@ -10,7 +10,7 @@ const state = {
 };
 
 export const App = {
-  init() {
+  async init() {
     MapModule.init('map');
     MapModule.onMarkerClick((place) => {
       // 지도 마커 클릭 시 장소 목록에서 해당 아이템 하이라이트
@@ -22,10 +22,50 @@ export const App = {
     this._bindMobileTabs();
     this._bindFilters();
 
-    // 저장된 그룹이 있으면 첫 번째 선택
+    document.getElementById('btn-migrate').hidden = !Storage.hasLegacyData();
+    document.getElementById('btn-sync').addEventListener('click', () => this.sync());
+    document.getElementById('btn-migrate').addEventListener('click', async () => {
+      const button = document.getElementById('btn-migrate');
+      button.disabled = true;
+      try {
+        await Storage.migrateLegacyData();
+        button.hidden = true;
+        this.renderShared();
+        UI.showToast('기존 그룹과 장소를 모두에게 공유했습니다.');
+      } catch (error) { UI.showToast(error.message, 'error'); }
+      finally { button.disabled = false; }
+    });
+    window.addEventListener('trips-updated', () => this.renderShared());
+    await this.sync();
+    setInterval(() => {
+      if (!document.hidden && document.getElementById('modal-overlay').style.display === 'none') this.sync();
+    }, 15000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && document.getElementById('modal-overlay').style.display === 'none') this.sync();
+    });
+  },
+
+  async sync() {
+    const status = document.getElementById('sync-status');
+    try {
+      if (await Storage.refresh()) this.renderShared();
+      status.textContent = '공유 중 · 15초마다 갱신';
+    } catch (error) { status.textContent = error.message; }
+  },
+
+  renderShared() {
     const groups = Storage.getGroups();
+    if (!groups.some(g => g.id === state.currentGroupId)) {
+      state.currentGroupId = null;
+      if (groups.length) { this.selectGroup(groups[0].id); return; }
+      UI.setCurrentGroupName('');
+      UI.renderPlaces([], {});
+      MapModule.clearMarkers();
+    } else {
+      UI.setCurrentGroupName(groups.find(g => g.id === state.currentGroupId).name);
+      this.renderPlaces();
+    }
     this.renderGroups();
-    if (groups.length > 0) this.selectGroup(groups[0].id);
   },
 
   // ── 그룹 ────────────────────────────────────────
@@ -35,8 +75,8 @@ export const App = {
       onSelect: (id) => this.selectGroup(id),
       onEdit: (id) => {
         const group = Storage.getGroups().find(g => g.id === id);
-        UI.showGroupModal(group, (data) => {
-          Storage.updateGroup(id, data);
+        UI.showGroupModal(group, async (data) => {
+          await Storage.updateGroup(id, data);
           this.renderGroups();
           if (id === state.currentGroupId) UI.setCurrentGroupName(data.name);
           UI.showToast('그룹이 수정되었습니다.');
@@ -46,7 +86,8 @@ export const App = {
         const group = Storage.getGroups().find(g => g.id === id);
         const ok = await UI.showConfirm(`"${group?.name}" 그룹과 모든 장소를 삭제할까요?`);
         if (!ok) return;
-        Storage.deleteGroup(id);
+        try { await Storage.deleteGroup(id); }
+        catch (error) { UI.showToast(error.message, 'error'); return; }
         if (state.currentGroupId === id) {
           state.currentGroupId = null;
           UI.setCurrentGroupName('');
@@ -95,8 +136,8 @@ export const App = {
       },
       onEdit: (id) => {
         const place = Storage.getPlaces().find(p => p.id === id);
-        UI.showPlaceModal(state.currentGroupId, place, (data) => {
-          Storage.updatePlace(id, data);
+        UI.showPlaceModal(state.currentGroupId, place, async (data) => {
+          await Storage.updatePlace(id, data);
           this.renderPlaces();
           const places = Storage.getPlacesByGroup(state.currentGroupId);
           MapModule.showPlaces(places);
@@ -107,7 +148,8 @@ export const App = {
         const place = Storage.getPlaces().find(p => p.id === id);
         const ok = await UI.showConfirm(`"${place?.name}" 장소를 삭제할까요?`);
         if (!ok) return;
-        Storage.deletePlace(id);
+        try { await Storage.deletePlace(id); }
+        catch (error) { UI.showToast(error.message, 'error'); return; }
         this.renderPlaces();
         const places = Storage.getPlacesByGroup(state.currentGroupId);
         MapModule.showPlaces(places);
@@ -123,8 +165,8 @@ export const App = {
   // ── 헤더 버튼 ───────────────────────────────────
   _bindHeader() {
     document.getElementById('btn-add-group').addEventListener('click', () => {
-      UI.showGroupModal(null, (data) => {
-        const group = Storage.addGroup(data);
+      UI.showGroupModal(null, async (data) => {
+        const group = await Storage.addGroup(data);
         this.renderGroups();
         this.selectGroup(group.id);
         UI.showToast('새 여행 그룹이 만들어졌습니다! 🎉');
@@ -133,15 +175,17 @@ export const App = {
 
     document.getElementById('btn-add-place').addEventListener('click', () => {
       if (!state.currentGroupId) return;
-      UI.showPlaceModal(state.currentGroupId, null, (data) => {
-        Storage.addPlace(data);
+      UI.showPlaceModal(state.currentGroupId, null, async (data) => {
+        await Storage.addPlace(data);
         this.renderPlaces();
         UI.showToast('장소가 추가되었습니다! 📍');
       });
     });
 
     document.getElementById('btn-export').addEventListener('click', () => {
-      const json = Storage.exportData();
+      let json;
+      try { json = Storage.exportData(); }
+      catch (error) { UI.showToast(error.message, 'error'); return; }
       const blob = new Blob([json], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -157,13 +201,11 @@ export const App = {
       const mode = await UI.showImportOptions();
       if (!mode) { e.target.value = ''; return; }
       try {
-        Storage.importData(text, mode);
-        this.renderGroups();
-        const groups = Storage.getGroups();
-        if (groups.length > 0) this.selectGroup(groups[0].id);
+        await Storage.importData(text, mode);
+        this.renderShared();
         UI.showToast('데이터를 가져왔습니다. ✅');
-      } catch {
-        UI.showToast('올바른 백업 파일이 아닙니다.', 'error');
+      } catch (error) {
+        UI.showToast(error.message || '올바른 백업 파일이 아닙니다.', 'error');
       }
       e.target.value = '';
     });

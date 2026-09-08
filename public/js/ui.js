@@ -19,15 +19,15 @@ export const UI = {
       return;
     }
     list.innerHTML = groups.map(g => `
-      <li class="group-item ${g.id === currentGroupId ? 'active' : ''}" data-id="${g.id}">
-        <span class="group-emoji">${g.coverEmoji || '🗺️'}</span>
+      <li class="group-item ${g.id === currentGroupId ? 'active' : ''}" data-id="${esc(g.id)}">
+        <span class="group-emoji">${esc(g.coverEmoji || '🗺️')}</span>
         <div class="group-info">
           <div class="group-name">${esc(g.name)}</div>
-          <div class="group-meta">${esc(g.region || '')} ${g.startDate ? g.startDate.slice(0, 7) : ''}</div>
+          <div class="group-meta">${esc(g.region || '')} ${esc(g.startDate ? String(g.startDate).slice(0, 7) : '')}</div>
         </div>
         <div class="group-actions">
-          <button class="btn-icon" data-action="edit-group" data-id="${g.id}" title="수정">✏️</button>
-          <button class="btn-icon" data-action="delete-group" data-id="${g.id}" title="삭제">🗑️</button>
+          <button class="btn-icon" data-action="edit-group" data-id="${esc(g.id)}" title="수정">✏️</button>
+          <button class="btn-icon" data-action="delete-group" data-id="${esc(g.id)}" title="삭제">🗑️</button>
         </div>
       </li>
     `).join('');
@@ -68,12 +68,12 @@ export const UI = {
       return;
     }
     list.innerHTML = places.map(p => `
-      <li class="place-item ${p.visited ? 'visited' : ''}" data-id="${p.id}">
+      <li class="place-item ${p.visited ? 'visited' : ''}" data-id="${esc(p.id)}">
         <div class="place-header">
-          <span class="place-name">${CATEGORY_EMOJIS[p.category] || '📌'} ${esc(p.name)}</span>
+          <span class="place-name">${esc(CATEGORY_EMOJIS[p.category] || '📌')} ${esc(p.name)}</span>
           <div class="place-actions">
-            <button class="btn-icon" data-action="edit-place" data-id="${p.id}" title="수정">✏️</button>
-            <button class="btn-icon" data-action="delete-place" data-id="${p.id}" title="삭제">🗑️</button>
+            <button class="btn-icon" data-action="edit-place" data-id="${esc(p.id)}" title="수정">✏️</button>
+            <button class="btn-icon" data-action="delete-place" data-id="${esc(p.id)}" title="삭제">🗑️</button>
           </div>
         </div>
         <span class="place-category">${esc(p.category)}</span>
@@ -114,7 +114,7 @@ export const UI = {
               ${(group?.coverEmoji || '🗺️') === e ? 'border-color:var(--color-primary);' : ''}
             ">${e}</button>`).join('')}
           </div>
-          <input type="hidden" id="gf-emoji" value="${group?.coverEmoji || '🗺️'}" />
+          <input type="hidden" id="gf-emoji" value="${esc(group?.coverEmoji || '🗺️')}" />
         </div>
         <div class="form-group">
           <label class="form-label">여행 이름 *</label>
@@ -133,11 +133,11 @@ export const UI = {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">시작일</label>
-            <input class="form-input" type="date" id="gf-start" value="${group?.startDate || ''}" />
+            <input class="form-input" type="date" id="gf-start" value="${esc(group?.startDate || '')}" />
           </div>
           <div class="form-group">
             <label class="form-label">종료일</label>
-            <input class="form-input" type="date" id="gf-end" value="${group?.endDate || ''}" />
+            <input class="form-input" type="date" id="gf-end" value="${esc(group?.endDate || '')}" />
           </div>
         </div>
         <div class="form-group">
@@ -160,19 +160,28 @@ export const UI = {
       });
     });
 
-    document.getElementById('modal-save-btn').addEventListener('click', () => {
+    document.getElementById('modal-save-btn').addEventListener('click', async (event) => {
+      const saveBtn = event.currentTarget;
+      if (saveBtn.disabled) return;
       const name = document.getElementById('gf-name').value.trim();
       if (!name) { this.showToast('여행 이름을 입력해주세요.', 'error'); return; }
-      onSave({
-        name,
-        coverEmoji: document.getElementById('gf-emoji').value,
-        purpose: document.getElementById('gf-purpose').value.trim(),
-        region: document.getElementById('gf-region').value.trim(),
-        startDate: document.getElementById('gf-start').value,
-        endDate: document.getElementById('gf-end').value,
-        notes: document.getElementById('gf-notes').value.trim(),
-      });
-      this.closeModal();
+      saveBtn.disabled = true;
+      try {
+        await onSave({
+          name,
+          coverEmoji: document.getElementById('gf-emoji').value,
+          purpose: document.getElementById('gf-purpose').value.trim(),
+          region: document.getElementById('gf-region').value.trim(),
+          startDate: document.getElementById('gf-start').value,
+          endDate: document.getElementById('gf-end').value,
+          notes: document.getElementById('gf-notes').value.trim(),
+        });
+        this.closeModal();
+      } catch (error) {
+        this.showToast(error.message || '저장하지 못했습니다. 다시 시도해주세요.', 'error');
+      } finally {
+        saveBtn.disabled = false;
+      }
     });
   },
 
@@ -219,7 +228,7 @@ export const UI = {
         </div>
         <div class="form-group">
           <label class="form-label">태그</label>
-          <input class="form-input" id="pf-tags" value="${(place?.tags || []).join(' ')}" placeholder="#바다 #아이랑 #역사" />
+          <input class="form-input" id="pf-tags" value="${esc((place?.tags || []).join(' '))}" placeholder="#바다 #아이랑 #역사" />
           <div class="form-hint">띄어쓰기로 구분, # 자동 추가</div>
         </div>
         <div class="form-group">
@@ -236,8 +245,8 @@ export const UI = {
         ` : ''}
         <input type="hidden" id="pf-naverurl" value="${esc(place?.naverUrl || '')}" />
         <input type="hidden" id="pf-placeid" value="${esc(place?.naverPlaceId || '')}" />
-        <input type="hidden" id="pf-lat" value="${place?.lat || ''}" />
-        <input type="hidden" id="pf-lng" value="${place?.lng || ''}" />
+        <input type="hidden" id="pf-lat" value="${esc(place?.lat ?? '')}" />
+        <input type="hidden" id="pf-lng" value="${esc(place?.lng ?? '')}" />
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" id="modal-cancel-btn">취소</button>
@@ -279,28 +288,37 @@ export const UI = {
       });
     }
 
-    document.getElementById('modal-save-btn').addEventListener('click', () => {
+    document.getElementById('modal-save-btn').addEventListener('click', async (event) => {
+      const saveBtn = event.currentTarget;
+      if (saveBtn.disabled) return;
       const name = document.getElementById('pf-name').value.trim();
       if (!name) { this.showToast('장소명을 입력해주세요.', 'error'); return; }
 
       const tagsRaw = document.getElementById('pf-tags').value.trim();
       const tags = tagsRaw.split(/\s+/).filter(Boolean).map(t => t.startsWith('#') ? t : '#' + t);
 
-      onSave({
-        groupId,
-        naverUrl: document.getElementById('pf-naverurl').value,
-        naverPlaceId: document.getElementById('pf-placeid').value,
-        name,
-        address: document.getElementById('pf-address').value.trim(),
-        phone: document.getElementById('pf-phone').value.trim(),
-        category: document.getElementById('pf-category').value,
-        tags,
-        notes: document.getElementById('pf-notes').value.trim(),
-        lat: parseFloat(document.getElementById('pf-lat').value) || null,
-        lng: parseFloat(document.getElementById('pf-lng').value) || null,
-        visited: document.getElementById('pf-visited')?.checked || false,
-      });
-      this.closeModal();
+      saveBtn.disabled = true;
+      try {
+        await onSave({
+          groupId,
+          naverUrl: document.getElementById('pf-naverurl').value,
+          naverPlaceId: document.getElementById('pf-placeid').value,
+          name,
+          address: document.getElementById('pf-address').value.trim(),
+          phone: document.getElementById('pf-phone').value.trim(),
+          category: document.getElementById('pf-category').value,
+          tags,
+          notes: document.getElementById('pf-notes').value.trim(),
+          lat: parseFloat(document.getElementById('pf-lat').value) || null,
+          lng: parseFloat(document.getElementById('pf-lng').value) || null,
+          visited: document.getElementById('pf-visited')?.checked || false,
+        });
+        this.closeModal();
+      } catch (error) {
+        this.showToast(error.message || '저장하지 못했습니다. 다시 시도해주세요.', 'error');
+      } finally {
+        saveBtn.disabled = false;
+      }
     });
   },
 
