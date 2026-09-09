@@ -24,3 +24,23 @@ test('route controls are edit-only and escape place IDs', () => {
   assert.ok(markup.includes('data-route-place="a&quot;&lt;"'));
   for (const action of ['add', 'remove', 'finish', 'cancel']) assert.ok(markup.includes(`data-route-action="${action}"`));
 });
+
+test('map editing retains route identity, unsaved modal changes and its original comparison snapshot', () => {
+  const route = {id:'r',name:'기존',placeIds:['a','b']};
+  const draft = new RouteDraft();
+  draft.edit(route, {name:'수정',placeIds:['b','a']});
+  draft.add('c', [{id:'c'}]); draft.remove('a'); draft.move('c',-1);
+  assert.equal(draft.routeId,'r');
+  assert.deepEqual(draft.ids,['c','b']);
+  assert.deepEqual(route.placeIds,['a','b']);
+  draft.edit(route, {name:'팝업 수정',placeIds:['b','c']});
+  assert.equal(draft.name,'팝업 수정');
+  assert.deepEqual(draft.base,route);
+  assert.throws(()=>draft.edit({id:'other',name:'다른 Route',placeIds:[]}));
+  draft.reorder(['c','b']);
+  assert.throws(()=>draft.reorder(['c','c']));
+  draft.cancel();
+  assert.equal(draft.routeId,null); assert.equal(draft.base,null);
+  draft.start();
+  assert.throws(()=>draft.edit(route), /먼저 저장/);
+});

@@ -37,6 +37,13 @@ test('route operations, backups, cleanup, conflicts and failures preserve shared
   const clone = first.getRoutes(); clone[1].placeIds.length = 0;
   assert.equal(first.getRoutes()[1].placeIds.length, 2);
   for (const data of [{ name: 'empty', placeIds: [] }, { name: 'bad', placeIds: ['missing'] }, { name: 'dup', placeIds: [a.id, a.id] }, { name: ' ', placeIds: [a.id] }]) await assert.rejects(() => first.addRoute(data));
+  const editingBase = first.getRoutes().find(r => r.id === route.id);
+  await second.updateRoute(route.id, {name:'다른 기기 수정'});
+  await first.refresh();
+  await assert.rejects(() => first.updateRoute(route.id, {name:'오래된 지도 수정'}, editingBase), /다른 기기에서 이 Route/);
+  assert.equal(first.getRoutes().find(r=>r.id===route.id).name,'다른 기기 수정');
+  await first.updateRoute(route.id, {name:'수정'}, first.getRoutes().find(r=>r.id===route.id));
+  await second.refresh();
   const backup = first.exportData();
   assert.equal(JSON.parse(backup).version, 2);
   offline = true;

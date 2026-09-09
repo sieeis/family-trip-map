@@ -22,6 +22,9 @@ export const RouteUI = {
       if (button.dataset.draftAction === 'finish') callbacks.onFinish?.();
       if (button.dataset.draftAction === 'cancel') callbacks.onCancel?.();
       if (button.dataset.draftAction === 'remove') callbacks.onRemove?.(button.dataset.id);
+      if (button.dataset.draftAction === 'edit') callbacks.onEditDraft?.();
+      if (button.dataset.draftAction === 'up') callbacks.onMove?.(button.dataset.id, -1);
+      if (button.dataset.draftAction === 'down') callbacks.onMove?.(button.dataset.id, 1);
     });
   },
   setView(view) {
@@ -56,12 +59,14 @@ export const RouteUI = {
     list._routeReorderError = event => UI.showToast(event.detail?.message || 'Route 순서를 저장하지 못했습니다.', 'error');
     list.addEventListener('reordererror', list._routeReorderError);
   },
-  renderDraft(ids, places, editing, active = false) {
+  renderDraft(ids, places, editing, active = false, editingRoute = null) {
     const bar = document.getElementById('route-draft-bar');
-    bar.hidden = !editing || (!active && ids.length === 0);
+    bar.hidden = !editing || (!active && !editingRoute && ids.length === 0);
     if (bar.hidden) { bar.innerHTML = ''; return; }
-    bar.innerHTML = `<div class="route-draft-heading"><span class="route-symbol" aria-hidden="true">R</span><strong role="status" aria-live="polite">${ids.length}개 장소 선택</strong><button class="btn btn-sm btn-primary" data-draft-action="finish" aria-label="Route 종료 및 이름 지정" ${ids.length ? '' : 'disabled'}>e 완료</button><button class="btn btn-sm btn-ghost" data-draft-action="cancel" aria-label="전체 Route 작업 취소">x 취소</button></div>
-      ${ids.length ? `<ol class="route-draft-list">${byId(ids, places).map(place => `<li><span>${esc(place.name)}</span><button class="btn-icon" data-draft-action="remove" data-id="${esc(place.id)}" aria-label="${esc(place.name)} Route에서 삭제">−</button></li>`).join('')}</ol>` : '<p class="route-modal-help">그룹에서 장소를 골라 R 또는 +를 누르세요.</p>'}`;
+    const ordered = byId(ids, places);
+    bar.innerHTML = `<div class="route-draft-heading"><span class="route-symbol" aria-hidden="true">R</span><strong role="status" aria-live="polite">${editingRoute ? `<span class="route-draft-name">${esc(editingRoute.name)}</span><span class="route-draft-state">수정 중 · ${ids.length}개 장소</span>` : `${ids.length}개 장소 선택`}</strong><button class="btn btn-sm btn-primary" data-draft-action="finish" aria-label="${editingRoute ? 'Route 수정 저장' : 'Route 종료 및 이름 지정'}" ${ids.length || editingRoute ? '' : 'disabled'}>e ${editingRoute ? '저장' : '완료'}</button><button class="btn btn-sm btn-ghost" data-draft-action="cancel" aria-label="전체 Route 작업 취소">x 취소</button></div>
+      ${editingRoute ? `<div class="route-draft-tools"><p class="route-modal-help">R/+ 추가 · − 제거 · ↑↓ 순서 · e 저장 · x 취소</p><button class="btn btn-sm btn-ghost" data-draft-action="edit">${icon('edit')} 목록에서 수정</button></div>` : ''}
+      ${ordered.length ? `<ol class="route-draft-list" aria-label="Route 방문 순서">${ordered.map((place, index) => `<li><div class="route-draft-place"><span class="route-draft-place-name">${esc(place.name)}</span><div class="route-draft-actions"><button class="btn-icon" data-draft-action="up" data-id="${esc(place.id)}" aria-label="${esc(place.name)} 위로" ${index === 0 ? 'disabled' : ''}>↑</button><button class="btn-icon" data-draft-action="down" data-id="${esc(place.id)}" aria-label="${esc(place.name)} 아래로" ${index === ordered.length - 1 ? 'disabled' : ''}>↓</button><button class="btn-icon" data-draft-action="remove" data-id="${esc(place.id)}" aria-label="${esc(place.name)} Route에서 삭제">−</button></div></div></li>`).join('')}</ol>` : '<p class="route-modal-help">그룹에서 장소를 골라 R 또는 +를 누르세요.</p>'}`;
   },
   showNameModal(route, orderedPlaces, onSave) {
     if (!UI._editing || UI._saving) return;
@@ -86,7 +91,7 @@ export const RouteUI = {
       finally { UI._saving = false; save.disabled = false; }
     });
   },
-  showEditModal(route, allPlaces, groups, onSave) {
+  showEditModal(route, allPlaces, groups, onSave, onMapEdit) {
     if (!UI._editing || UI._saving) return;
     const places = new Map(allPlaces.map(place => [place.id, place]));
     const groupNames = new Map(groups.map(group => [group.id, group.name]));
@@ -94,6 +99,7 @@ export const RouteUI = {
     let saving = false;
     UI._openModal(`<div class="modal-header"><span class="modal-title" id="route-edit-title">Route 수정</span><button class="modal-close" id="modal-close-btn" aria-label="닫기">${icon('close')}</button></div>
       <div class="modal-body route-editor"><div class="form-group"><label for="rf-name" class="form-label">Route 이름 *</label><input id="rf-name" class="form-input" maxlength="200" value="${esc(route.name)}" required /></div>
+      ${onMapEdit ? `<div class="route-editor-map-entry"><button id="btn-route-edit-map" class="btn btn-primary">${icon('map')} 지도에서 수정</button><p class="route-modal-help">현재 변경 내용을 이어서 지도 핀으로 장소를 추가하거나 뺄 수 있습니다.</p></div>` : ''}
       <section aria-labelledby="route-edit-order-title"><h3 id="route-edit-order-title" class="route-editor-heading">방문 순서 <span id="route-edit-count"></span></h3><p class="route-modal-help">위아래 버튼이나 손잡이를 드래그해 순서를 바꾸세요. 손잡이에 초점을 두고 방향키로도 이동할 수 있습니다.</p><ol id="route-edit-list" class="route-edit-list" aria-label="방문할 장소 순서"></ol></section>
       <section class="route-editor-add" aria-labelledby="route-edit-add-title"><h3 id="route-edit-add-title" class="route-editor-heading">장소 추가</h3><p class="route-modal-help">모든 그룹에서 장소를 찾아 추가할 수 있습니다. 선택한 장소는 마지막 순서에 추가됩니다.</p><div class="route-editor-filters"><div><label for="route-place-search" class="form-label">장소 검색</label><input id="route-place-search" class="form-input" type="search" placeholder="장소 이름 또는 주소" /></div><div><label for="route-place-group" class="form-label">그룹</label><select id="route-place-group" class="form-select"><option value="">모든 그룹</option>${groups.map(group => `<option value="${esc(group.id)}">${esc(group.name)}</option>`).join('')}</select></div></div><p id="route-place-result-count" class="route-modal-help" role="status" aria-live="polite"></p><ul id="route-place-results" class="route-place-results" aria-label="추가할 수 있는 장소"></ul></section>
       <p id="route-edit-status" class="route-modal-help" role="status" aria-live="polite"></p></div><div class="modal-footer"><button class="btn btn-ghost" id="modal-cancel-btn">취소</button><button class="btn btn-primary" id="modal-save-btn">수정 완료</button></div>`);
@@ -150,6 +156,24 @@ export const RouteUI = {
     UI._onModalClose = () => { list._reorderCleanup?.(); controller.abort(); };
     search.addEventListener('input', renderResults);
     group.addEventListener('change', renderResults);
+    document.getElementById('btn-route-edit-map')?.addEventListener('click', async event => {
+      const button = event.currentTarget;
+      if (saving || UI._saving || !UI._editing || button.disabled) return;
+      const name = nameInput.value.trim();
+      if (!name) { UI.showToast('Route 이름을 입력해주세요.', 'error'); nameInput.focus(); return; }
+      saving = true;
+      const controls = [...modal.querySelectorAll('button, input, select')].map(control => [control, control.disabled]);
+      controls.forEach(([control]) => { control.disabled = true; });
+      try {
+        // The callback owns confirmation and modal closure; declining keeps this editor intact.
+        await onMapEdit({ name, placeIds: [...selected] });
+      } catch (error) {
+        UI.showToast(error.message || '지도 수정을 시작하지 못했습니다.', 'error');
+      } finally {
+        saving = false;
+        controls.forEach(([control, disabled]) => { control.disabled = disabled; });
+      }
+    });
     nameInput.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); save.click(); } });
     save.addEventListener('click', async () => {
       if (saving || !UI._editing) return;

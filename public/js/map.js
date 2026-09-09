@@ -184,9 +184,13 @@ export const MapModule = {
       const start = new naver.maps.LatLng(from.lat, from.lng);
       const middle = new naver.maps.LatLng((from.lat + to.lat) / 2, (from.lng + to.lng) / 2);
       const end = new naver.maps.LatLng(to.lat, to.lng);
-      const style = {map: _map, strokeColor: '#2563eb', strokeWeight: 4, strokeOpacity: 0.9, clickable: false, zIndex: 1};
+      const common = {map: _map, clickable: false, strokeLineCap: 'round', strokeLineJoin: 'round'};
+      // A translucent highlight and white casing keep the dashed blue direction readable on map tiles.
+      _routeLines.push(new naver.maps.Polyline({...common, path: [start, middle, end], strokeColor: '#38bdf8', strokeWeight: 12, strokeOpacity: 0.18, zIndex: 1}));
+      _routeLines.push(new naver.maps.Polyline({...common, path: [start, middle, end], strokeColor: '#ffffff', strokeWeight: 7, strokeOpacity: 0.65, zIndex: 2}));
+      const style = {...common, strokeColor: '#1d4ed8', strokeWeight: 4, strokeStyle: 'shortdash', strokeOpacity: 0.68, zIndex: 3};
       _routeLines.push(new naver.maps.Polyline({...style, path: [middle, end]}));
-      _routeLines.push(new naver.maps.Polyline({...style, path: [start, middle], endIcon: naver.maps.PointingIcon.OPEN_ARROW, endIconSize: 14}));
+      _routeLines.push(new naver.maps.Polyline({...style, path: [start, middle], endIcon: naver.maps.PointingIcon.OPEN_ARROW, endIconSize: 18}));
     }
     const status = document.getElementById?.('map-route-status');
     if (status) {

@@ -74,10 +74,10 @@ export const App = {
     await this.sync();
     await mapLoading;
     setInterval(() => {
-      if (!document.hidden && document.getElementById('modal-overlay').style.display === 'none') this.sync();
+      if (!document.hidden && !draft.routeId && document.getElementById('modal-overlay').style.display === 'none') this.sync();
     }, 15000);
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && document.getElementById('modal-overlay').style.display === 'none') this.sync();
+      if (!document.hidden && !draft.routeId && document.getElementById('modal-overlay').style.display === 'none') this.sync();
     });
   },
 
@@ -234,7 +234,7 @@ export const App = {
   },
   renderRoutes() {
     RouteUI.render(sorted(Storage.getRoutes(), state.routeSort), state.currentRouteId, Storage.getPlaces(), state.editing, state.routeSort);
-    RouteUI.renderDraft(draft.ids, Storage.getPlaces(), state.editing, draft.active);
+    RouteUI.renderDraft(draft.ids, Storage.getPlaces(), state.editing, draft.active, draft.routeId ? {id:draft.routeId,name:draft.name} : null);
   },
   selectRoute(id) {
     state.currentRouteId = id;
@@ -250,12 +250,15 @@ export const App = {
     if (!state.editing) { UI.showToast('자물쇠를 눌러 편집 모드를 켜주세요.'); return; }
     if (Storage.isSaving || UI._saving) return;
     if (action === 'finish') {
-      if (!draft.ids.length) { UI.showToast('Route에 장소를 먼저 추가해주세요.'); return; }
+      if (!draft.ids.length && !draft.routeId) { UI.showToast('Route에 장소를 먼저 추가해주세요.'); return; }
       const ids = [...draft.ids];
-      RouteUI.showNameModal(null, this.orderedPlaces(ids), async data => {
-        const route = await Storage.addRoute({name: data.name, placeIds: ids});
-        draft.cancel(); this.selectRoute(route.id);
-        UI.showToast('Route가 생성되었습니다.');
+      const routeId = draft.routeId;
+      RouteUI.showNameModal(routeId ? {id:routeId,name:draft.name} : null, this.orderedPlaces(ids), async data => {
+        let savedId = routeId;
+        if (routeId) await Storage.updateRoute(routeId, {name: data.name, placeIds: ids}, draft.base);
+        else savedId = (await Storage.addRoute({name: data.name, placeIds: ids})).id;
+        draft.cancel(); this.selectRoute(savedId);
+        UI.showToast(routeId ? 'Route가 수정되었습니다.' : 'Route가 생성되었습니다.');
       });
       return;
     }
@@ -265,11 +268,36 @@ export const App = {
     try {
       if (action === 'add') draft.add(id, Storage.getPlaces());
       else if (action === 'remove') draft.remove(id);
-      else if (action === 'cancel') draft.cancel();
+      else if (action === 'cancel') {
+        const routeId = draft.routeId;
+        draft.cancel();
+        if (routeId && Storage.getRoutes().some(route => route.id === routeId)) { this.selectRoute(routeId); return; }
+      }
       else if (action === 'new') draft.start();
       this.renderPlaces(); this.renderRoutes();
       MapModule.setRoute(this.routeIds(), state.editing, draft.ids);
     } catch (error) { UI.showToast(error.message, 'error'); }
+  },
+  openRouteEditor(id) {
+    const route = Storage.getRoutes().find(r => r.id === id);
+    if (!state.editing || !route) return;
+    if (draft.active && draft.routeId !== id) { UI.showToast('작성 중인 Route를 먼저 저장하거나 취소해주세요.'); return; }
+    const displayed = draft.routeId === id ? {...route, name:draft.name, placeIds:[...draft.ids]} : route;
+    const expected = draft.routeId === id ? draft.base : route;
+    RouteUI.showEditModal(displayed, Storage.getPlaces(), Storage.getGroups(), async data => {
+      await Storage.updateRoute(id, data, expected);
+      if (draft.routeId === id) draft.cancel();
+      this.selectRoute(id);
+    }, data => {
+      try { draft.edit(expected, data); }
+      catch (error) { UI.showToast(error.message, 'error'); return false; }
+      UI.closeModal();
+      this.selectRoute(id);
+      this._setPanel('places', false);
+      this._showMapTab();
+      UI.showToast('핀의 R/+로 추가, −로 제거한 뒤 e로 저장하세요.');
+      return true;
+    });
   },
   _bindRoutes() {
     MapModule.onRouteAction((action, id) => this.routeAction(action, id));
@@ -290,6 +318,11 @@ export const App = {
       onFinish: () => this.routeAction('finish'),
       onCancel: () => this.routeAction('cancel'),
       onRemove: id => this.routeAction('remove', id),
+      onMove: (id, direction) => {
+        if (!state.editing || Storage.isSaving || UI._saving) return;
+        draft.move(id, direction); this.renderPlaces(); this.renderRoutes();
+      },
+      onEditDraft: () => { if (draft.routeId) this.openRouteEditor(draft.routeId); },
       onDetails: id => {
         const route = Storage.getRoutes().find(r => r.id === id);
         if (route) RouteUI.showDetails(route, Storage.getPlaces(), placeId => {
@@ -298,16 +331,10 @@ export const App = {
           if (place && MapModule.panToPlace(place)) { state.selectedPlaceId = placeId; state.mapView = 'place'; this._updateMapControls(); }
         });
       },
-      onEdit: id => {
-        const route = Storage.getRoutes().find(r => r.id === id);
-        if (!state.editing || !route) return;
-        RouteUI.showEditModal(route, Storage.getPlaces(), Storage.getGroups(), async data => {
-          await Storage.updateRoute(id, data); this.renderShared();
-        });
-      },
+      onEdit: id => this.openRouteEditor(id),
       onDelete: async id => {
         if (!state.editing || !(await UI.showConfirm('이 Route를 삭제할까요? 등록된 장소는 유지됩니다.'))) return;
-        try { await Storage.deleteRoute(id); this.renderShared(); }
+        try { await Storage.deleteRoute(id); if (draft.routeId === id) draft.cancel(); this.renderShared(); }
         catch (error) { UI.showToast(error.message, 'error'); }
       },
       onReorder: async ids => {
@@ -411,13 +438,14 @@ export const App = {
   },
 
   renderPlaces() {
-    if (!state.currentGroupId && !state.currentRouteId) return;
+    if (!state.currentGroupId && !state.currentRouteId && !draft.routeId) return;
     const route = Storage.getRoutes().find(r => r.id === state.currentRouteId);
-    let places = route ? this.orderedPlaces(route.placeIds) : Storage.getPlacesByGroup(state.currentGroupId);
-    if (route) UI.setCurrentGroupName(route.name);
+    const editingRoute = route && draft.routeId === route.id;
+    let places = route ? this.orderedPlaces(editingRoute ? draft.ids : route.placeIds) : Storage.getPlacesByGroup(state.currentGroupId);
+    if (route) UI.setCurrentGroupName(editingRoute ? `${draft.name} · 수정 중` : route.name);
     document.getElementById('btn-add-place').style.display = route ? 'none' : 'inline-block';
     document.getElementById('sort-places').disabled = !!route;
-    this.renderCategoryFilters(places);
+    this.renderCategoryFilters(draft.routeId ? Storage.getPlaces() : places);
 
     if (state.filterCategory) {
       places = places.filter(p => p.category === state.filterCategory);
@@ -454,7 +482,8 @@ export const App = {
         try {
           if (route) {
             const selected = new Set(ids); let index = 0;
-            await Storage.updateRoute(route.id, {placeIds: route.placeIds.map(id => selected.has(id) ? ids[index++] : id)});
+            if (editingRoute) draft.reorder(draft.ids.map(id => selected.has(id) ? ids[index++] : id));
+            else await Storage.updateRoute(route.id, {placeIds: route.placeIds.map(id => selected.has(id) ? ids[index++] : id)});
           } else await Storage.reorderPlaces(groupId, ids);
           state.placeSort = 'manual';
           document.getElementById('sort-places').value = 'manual';
@@ -472,6 +501,7 @@ export const App = {
       },
       onDelete: async (id) => {
         if (!state.editing) return;
+        if (editingRoute) { this.routeAction('remove', id); return; }
         const place = Storage.getPlaces().find(p => p.id === id);
         const ok = await UI.showConfirm(`"${place?.name}" 장소를 삭제할까요?`);
         if (!ok) return;
@@ -485,12 +515,16 @@ export const App = {
     document.querySelectorAll('.place-item').forEach(el => el.classList.toggle('active', el.dataset.id === state.selectedPlaceId));
 
     // 지도 마커 업데이트
-    if (!places.some(p => p.id === state.selectedPlaceId)) {
+    const mapPlaces = draft.routeId ? Storage.getPlaces().filter(place => draft.ids.includes(place.id) || (
+      (!state.filterCategory || place.category === state.filterCategory) &&
+      (!state.filterTag || place.name.toLowerCase().includes(state.filterTag.toLowerCase()) || place.tags?.some(tag => tag.toLowerCase().includes(state.filterTag.toLowerCase())))
+    )) : places;
+    if (!mapPlaces.some(p => p.id === state.selectedPlaceId)) {
       state.selectedPlaceId = null;
       state.mapView = 'group';
     }
     MapModule.setRoute(this.routeIds(), state.editing, draft.ids);
-    MapModule.showPlaces(places);
+    MapModule.showPlaces(mapPlaces);
     this.renderRoutes();
     this._updateMapControls();
   },

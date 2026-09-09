@@ -24,11 +24,23 @@ body[data-theme] .map-place-card .route-control.route-r { border: 2px solid var(
 .route-pin-number { position: absolute; left: calc(100% - 4px); top: -8px; min-width: 23px; height: 23px; padding: 0 5px; border-radius: 50%; border: 2px solid var(--color-surface); background: var(--color-primary); color: #fff; font: 700 12px/19px sans-serif; text-align: center; box-shadow: var(--shadow-sm); z-index: 3; }
 .route-draft-bar { padding: 9px 10px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
 .route-draft-heading { display: flex; align-items: center; gap: 5px; }
-.route-draft-heading strong { flex: 1; font-size: 12px; }
+.route-draft-heading strong { flex: 1; min-width: 0; font-size: 12px; }
+.route-draft-heading > button { flex-shrink: 0; }
+.route-draft-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-draft-state { display: block; color: var(--color-primary); font-size: 11px; margin-top: 2px; }
+.route-draft-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; margin-top: 5px; }
+.route-draft-tools .route-modal-help { flex: 1 1 170px; margin: 0; font-size: 11px; }
+.route-draft-tools > button { gap: 4px; min-height: 32px; white-space: nowrap; }
+.route-draft-tools .app-icon { width: 14px; height: 14px; }
 .route-draft-list { margin-top: 6px; padding-left: 25px; max-height: 96px; overflow-y: auto; font-size: 12px; }
 .route-draft-list li { padding: 2px 2px 2px 0; }
 .route-draft-list li::marker, .route-ordered-list li::marker { color: var(--color-primary); font-weight: 800; }
-.route-draft-list li span { display: inline-block; max-width: calc(100% - 30px); vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-draft-place { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.route-draft-place-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-draft-actions { display: flex; flex-shrink: 0; }
+.route-draft-actions .btn-icon { width: 30px; height: 32px; }
+.route-draft-actions .btn-icon:disabled { opacity: .35; cursor: default; }
+.route-draft-bar button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
 .route-ordered-list { padding-left: 26px; margin-top: 12px; }
 .route-ordered-list li { padding: 8px 3px; border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
 .route-detail-place { background: none; border: 0; font: inherit; color: var(--color-text); text-align: left; cursor: pointer; }
@@ -40,6 +52,9 @@ body[data-theme] .map-place-card .route-control.route-r { border: 2px solid var(
 .modal-box:has(.route-editor) .modal-footer { flex-shrink: 0; padding-top: 12px; border-top: 1px solid var(--color-border); }
 .route-editor-heading span { color: var(--color-primary); font-size: 12px; font-weight: 600; }
 .route-editor .route-modal-help { margin: 6px 0 10px; }
+.route-editor-map-entry { padding: 12px; margin: 0 0 18px; border: 1px solid var(--color-primary); border-radius: 8px; background: var(--color-bg); }
+.route-editor-map-entry > button { width: 100%; min-height: 40px; gap: 7px; }
+.route-editor-map-entry .route-modal-help { margin-bottom: 0; }
 .route-edit-list, .route-place-results { list-style: none; padding: 0; margin: 0; max-height: 240px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--color-border); border-radius: 8px; }
 .route-edit-row, .route-place-result { display: flex; align-items: center; gap: 6px; padding: 9px 8px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
 .route-edit-row:last-child, .route-place-result:last-child { border-bottom: 0; }
@@ -78,8 +93,9 @@ body[data-theme] .map-place-card .route-control.route-r { border: 2px solid var(
   .route-controls { padding-top: 5px; margin-top: 5px; }
   .route-control { width: 34px; height: 34px; }
   .route-draft-bar { padding: 5px 10px; }
-  .route-draft-list { display: flex; gap: 20px; padding-left: 22px; overflow-x: auto; max-height: 36px; margin-top: 2px; }
-  .route-draft-list li { flex: 0 0 auto; max-width: 170px; }
+  .route-draft-list { display: flex; gap: 22px; padding-left: 22px; overflow-x: auto; overflow-y: hidden; max-height: 48px; margin-top: 2px; padding-bottom: 3px; }
+  .route-draft-list li { flex: 0 0 220px; max-width: 220px; }
+  .route-draft-actions .btn-icon { width: 34px; height: 36px; }
   .route-item .group-meta { display: none; }
   .route-empty p { display: none; }
   #routes-content .sort-bar { flex-shrink: 0; }

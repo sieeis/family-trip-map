@@ -112,10 +112,13 @@ export const Storage = {
       return route;
     });
   },
-  updateRoute(id, data) {
+  updateRoute(id, data, expected = null) {
     return mutate(next => {
       const route = next.routes.find(route => route.id === id);
-      if (!route) throw new Error('이 Route는 다른 기기에서 삭제되었습니다.');
+        if (!route) throw new Error('이 Route는 다른 기기에서 삭제되었습니다.');
+        if (expected && (route.name !== expected.name || JSON.stringify(route.placeIds) !== JSON.stringify(expected.placeIds))) {
+          throw new Error('다른 기기에서 이 Route가 수정되었습니다. 현재 작업을 취소하고 최신 Route에서 다시 수정해주세요.');
+        }
       Object.assign(route, routeData({ ...route, ...data }, next));
     });
   },
