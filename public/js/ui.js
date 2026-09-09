@@ -481,8 +481,8 @@ export const UI = {
         const attrs = `class="detail-copy" data-copy-index="${index}" title="${esc(label)} 복사" aria-label="${esc(label)} 복사: ${esc(value)}"`;
         return `<dt><button ${attrs}>${esc(label)}</button></dt><dd><button ${attrs}>${esc(value)} ${icon('copy')}</button></dd>`;
       }).join('')}</dl>
-      ${imageLinks.length ? `<div aria-label="사용자 이미지 링크" style="display:flex;flex-wrap:wrap;gap:8px 20px;">${imageLinks.map(imageUrl => `<a class="detail-link" data-image-link href="${esc(imageUrl)}" title="${esc(linkTitleFallback(imageUrl))}" target="_blank" rel="noopener noreferrer" style="max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere;">${esc(linkTitleFallback(imageUrl))} ↗</a>`).join('')}</div>` : ''}
-      ${link ? `<a class="detail-link" href="${esc(link)}" target="${sameTab ? '_self' : '_blank'}" rel="noopener noreferrer">네이버지도에서 보기 ↗</a>` : ''}</div>
+      ${link ? `<a class="detail-link" href="${esc(link)}" target="${sameTab ? '_self' : '_blank'}" rel="noopener noreferrer">네이버지도에서 보기 ↗</a>` : ''}
+      ${imageLinks.length ? `<hr class="detail-links-divider"><div class="detail-image-links" aria-label="사용자 이미지 링크">${imageLinks.map(imageUrl => `<a class="detail-link" data-image-link href="${esc(imageUrl)}" title="${esc(linkTitleFallback(imageUrl))}" target="_blank" rel="noopener noreferrer">${esc(linkTitleFallback(imageUrl))} ↗</a>`).join('')}</div>` : ''}</div>
       <div class="modal-footer"><button class="btn btn-ghost" id="modal-cancel-btn">닫기</button></div>
     `);
     loadLinkTitles(document.getElementById('modal-overlay'));

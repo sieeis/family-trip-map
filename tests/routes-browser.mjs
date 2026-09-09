@@ -10,7 +10,7 @@ import { validateData } from '../lib/trip-data.js';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
 let data = validateData({groups:[{id:'g1',name:'서울'},{id:'g2',name:'부산'}],places:[
   {id:'a',groupId:'g1',name:'서울숲',address:'서울 성동구 뚝섬로 273',category:'관광지',lat:37.54,lng:127.04},
-  {id:'b',groupId:'g1',name:'경복궁',address:'서울 종로구 사직로 161',category:'관광지',pinColor:'#FF00FF',notes:'입장 시간 확인\n<script>메모 그대로</script>',lat:37.57,lng:126.97},
+  {id:'b',groupId:'g1',name:'경복궁',naverUrl:'https://m.place.naver.com/place/123/home',address:'서울 종로구 사직로 161',category:'관광지',pinColor:'#FF00FF',notes:'입장 시간 확인\n<script>메모 그대로</script>',lat:37.57,lng:126.97},
   {id:'c',groupId:'g2',name:'해운대',address:'부산 해운대구',category:'체험/액티비티',lat:35.16,lng:129.16},
 ]});
 let revision = 1;
@@ -323,6 +323,17 @@ try {
     assert.match(await link.getAttribute('rel'),/noopener/);
   }
   assert.equal(await page.locator('#modal-content img').count(),0,'links do not download remote images');
+  const naverLink=page.locator('#modal-content').getByRole('link',{name:'네이버지도에서 보기'});
+  const naverBox=await naverLink.boundingBox();
+  const userBoxes=await page.locator('#modal-content [data-image-link]').evaluateAll(links=>links.map(link=>{const r=link.getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left};}));
+  assert.ok(userBoxes[0].top>=naverBox.y+naverBox.height,'user links follow Naver link');
+  for(let i=1;i<userBoxes.length;i++) {
+    assert.ok(Math.abs(userBoxes[i].top-userBoxes[i-1].bottom)<1,'no vertical gap between links');
+    assert.equal(userBoxes[i].left,userBoxes[0].left,'one link per line');
+  }
+  assert.equal(await page.locator('#modal-content .detail-image-links').count(),1);
+  assert.equal(await page.locator('#modal-content hr').count(),1);
+
   await page.screenshot({path:'artifacts/routes/image-links-details.png',fullPage:true});
 
   await page.locator('#modal-cancel-btn').click();
