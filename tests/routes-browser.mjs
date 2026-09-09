@@ -9,7 +9,7 @@ import { validateData } from '../lib/trip-data.js';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
 let data = validateData({groups:[{id:'g1',name:'서울'},{id:'g2',name:'부산'}],places:[
-  {id:'a',groupId:'g1',name:'서울숲',lat:37.54,lng:127.04},
+  {id:'a',groupId:'g1',name:'서울숲',address:'서울 성동구 뚝섬로 273',category:'관광지',lat:37.54,lng:127.04},
   {id:'b',groupId:'g1',name:'경복궁',lat:37.57,lng:126.97},
   {id:'c',groupId:'g2',name:'해운대',lat:35.16,lng:129.16},
 ]});
@@ -58,6 +58,19 @@ try {
   await page.locator('.place-item').first().waitFor();
   assert.equal(await page.locator('.route-controls').count(),0);
   await page.locator('#btn-edit-mode').click();
+  // Registering the same manual place in another group must leave storage untouched.
+  await page.locator('.group-item[data-id="g2"] .group-name').click();
+  await page.locator('#btn-add-place').click();
+  await page.locator('#pf-name').fill('서울숲');
+  await page.locator('#pf-address').fill('서울 성동구 뚝섬로 273');
+  const beforeDuplicate = revision;
+  await page.locator('#modal-save-btn').click();
+  await page.getByText(/이미 등록된 동일한 장소입니다/).waitFor();
+  assert.equal(revision,beforeDuplicate,'duplicate registration sends no PUT');
+  assert.equal(data.places.length,3);
+  assert.equal(await page.locator('#pf-name').inputValue(),'서울숲');
+  await page.locator('#modal-cancel-btn').click();
+  await page.locator('.group-item[data-id="g1"] .group-name').click();
   await page.locator('.map-pin[data-place-id="b"]').click();
   await page.locator('#map-labels [data-route-place="b"].route-r').click();
   await page.locator('.place-item[data-id="a"] .route-r').click();

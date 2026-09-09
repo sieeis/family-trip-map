@@ -73,6 +73,22 @@ body[data-theme="midnight"] .modal-header { background-image: radial-gradient(#6
 body[data-theme="midnight"] .modal-overlay { background: #020603aa; }
 body[data-theme="midnight"] .modal-title { font-size: 19px; letter-spacing: 1px; }
 body[data-theme="midnight"] .group-item.active, body[data-theme="midnight"] .place-item.active { border-left: 4px solid #c8ef68; }
+/* Keep category tints visible in every theme and selection state. */
+body[data-theme] .place-item {
+  --place-tint: 9%; --place-tint-hover: 14%; --place-tint-active: 18%;
+  background-color: color-mix(in srgb, var(--place-category-color, #343a40) var(--place-tint), transparent);
+}
+body[data-theme="midnight"] .place-item {
+  --place-tint: 18%; --place-tint-hover: 24%; --place-tint-active: 28%;
+}
+body[data-theme] .place-item:hover {
+  background-color: color-mix(in srgb, var(--place-category-color, #343a40) var(--place-tint-hover), transparent);
+}
+body[data-theme] .place-item.active,
+body[data-theme] .place-item.is-dragging {
+  background-color: color-mix(in srgb, var(--place-category-color, #343a40) var(--place-tint-active), transparent);
+  border-color: var(--color-primary);
+}
 .mobile-tab-bar { position: absolute; top: 16px; right: 16px; bottom: auto; z-index: 30; display: flex; flex-direction: column; gap: 8px; width: 44px; height: auto; padding: 0; border: 0; background: transparent; }
 .map-view-btn { flex: none; width: 44px; height: 44px; padding: 0; border-radius: 15px; border: 1px solid var(--color-border); background: var(--theme-glass); color: var(--color-text); backdrop-filter: blur(18px) saturate(150%); box-shadow: 0 4px 14px #10243626; font-size: 12px; font-weight: 700; }
 #btn-map-place { font-size: 25px; }

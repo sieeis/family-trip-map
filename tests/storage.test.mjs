@@ -55,6 +55,18 @@ test('independent devices share writes, keep failed drafts off server and preser
   assert.equal(revision, beforeBulk + 1);
   await second.refresh();
   assert.equal(second.getPlaces().length, 3);
+  const duplicateRevision = revision;
+  await assert.rejects(() => first.addPlace({ groupId: group.id, name: '다른 이름', naverUrl: 'https://m.place.naver.com/restaurant/111/home' }), /이미 등록된/);
+  assert.equal(revision, duplicateRevision, 'duplicate single must not write');
+  const otherGroup = await first.addGroup({name:'다른 그룹'});
+  const beforeSkip = revision;
+  assert.deepEqual(await first.addPlaces(otherGroup.id, [{name:'다른 그룹 중복', naverPlaceId:'111'}]), {added:0,skipped:1});
+  assert.equal(revision, beforeSkip, 'all-duplicate bulk must not write');
+  await assert.rejects(() => first.addPlace({groupId:otherGroup.id,name:'중복',naverPlaceId:'222'}), /이미 등록된/);
+  const currentA = first.getPlaces().find(p => p.naverPlaceId === '111');
+  await assert.rejects(() => first.updatePlace(currentA.id,{naverPlaceId:'222'}), /이미 등록된/);
+  await assert.rejects(() => first.importData(JSON.stringify({groups:[],places:[{...currentA,id:'import-duplicate'}]})), /이미 등록된/);
+  await first.deleteGroup(otherGroup.id);
   offline = true;
   await assert.rejects(() => first.addPlaces(group.id, [{name:'실패한 일괄'}]));
   assert.equal(first.getPlaces().length, 3);

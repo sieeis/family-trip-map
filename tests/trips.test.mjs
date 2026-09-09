@@ -115,3 +115,19 @@ test('routes survive saves, reject outdated clients and reject dangling referenc
   assert.equal(cleared.status, 200);
   assert.equal((await call(handler, 'PUT', { ...routeData, revision: saved.body.revision })).status, 409);
 });
+
+
+test('server blocks cross-group duplicates and preserves existing records', async () => {
+  const store = memoryStore();
+  const handler = createTripsHandler(store);
+  const first = await call(handler, 'PUT', {...data, places:[{...place,naverPlaceId:'123'}], revision:null});
+  const duplicate = {...place,id:'duplicate',groupId:'group-2',naverUrl:'https://m.place.naver.com/restaurant/123/home'};
+  const attempt = await call(handler, 'PUT', {...first.body,groups:[group,{...group,id:'group-2'}],places:[...first.body.places,duplicate]});
+  assert.equal(attempt.status,400);
+  assert.match(attempt.body.message,/이미 등록된/);
+  assert.equal((await store.read()).places.length,1);
+  // Historical duplicates remain editable; no data is removed automatically.
+  const historical = await store.write(validateData({...data,places:[{...place,naverPlaceId:'123'},{...place,id:'old-copy',naverPlaceId:'123'}]}),first.body.revision);
+  historical.places[0].notes='메모 수정';
+  assert.equal((await call(handler,'PUT',historical)).status,200);
+});

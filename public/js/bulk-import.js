@@ -1,3 +1,4 @@
+import { findDuplicate } from './place-identity.js';
 const HOSTS = new Set(['naver.me', 'me.naver.com', 'map.naver.com', 'm.place.naver.com', 'pcmap.place.naver.com', 'place.naver.com']);
 const placeId = url => String(url || '').match(/\/(?:place|restaurant|accommodation|hotel|cafe|hospital|beauty|attraction)\/(\d+)(?:[/?#]|$)/)?.[1];
 export function placeKey(place) {
@@ -28,14 +29,14 @@ export function parseBulkLinks(text) {
 
 export async function resolveBulk(rows, { fetchPlace, existing = [], onUpdate = () => {}, signal }) {
   const pending = rows.filter(row => ['pending', 'failed'].includes(row.status));
-  const existingKeys = new Set(existing.map(placeKey).filter(Boolean));
+  const existingPlaces = [...existing];
   let cursor = 0;
   const notify = () => { if (!signal?.aborted) onUpdate(rows); };
   async function worker() {
     while (cursor < pending.length && !signal?.aborted) {
       const row = pending[cursor++];
-      if (existingKeys.has(placeKey({ naverUrl: row.url }))) {
-        row.status = 'duplicate'; row.message = '이 그룹에 이미 등록된 장소'; notify(); continue;
+      if (findDuplicate({ naverUrl: row.url }, existingPlaces)) {
+        row.status = 'duplicate'; row.message = '이미 등록된 장소 (전체 그룹 검사)'; notify(); continue;
       }
       row.status = 'loading'; row.message = ''; notify();
       try {
@@ -54,12 +55,11 @@ export async function resolveBulk(rows, { fetchPlace, existing = [], onUpdate = 
   await Promise.all([worker(), worker()]);
   if (signal?.aborted) return;
   // Apply identity checks in input order, not network completion order.
-  const seen = new Set(existingKeys);
+  const seen = [...existingPlaces];
   for (const row of rows) {
     if (row.status !== 'success') continue;
-    const key = placeKey(row.place);
-    if (key && seen.has(key)) { row.status = 'duplicate'; row.message = '이 그룹 또는 입력 목록에 같은 장소가 있습니다.'; }
-    else if (key) seen.add(key);
+    if (findDuplicate(row.place, seen)) { row.status = 'duplicate'; row.message = '전체 장소 또는 입력 목록에 같은 장소가 있습니다.'; }
+    else seen.push(row.place);
   }
   notify();
   return rows;

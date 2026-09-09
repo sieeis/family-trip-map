@@ -1,4 +1,4 @@
-import { placeKey } from './bulk-import.js';
+import { findDuplicate, assertNoNewDuplicatePlaces } from './place-identity.js';
 // Local keys are retained as a backup of the old, device-only app.
 const GROUPS_KEY = 'ftm_groups';
 const PLACES_KEY = 'ftm_places';
@@ -73,7 +73,9 @@ async function mutate(update) {
     if (loading) await loading;
     const next = structuredClone(state);
     const result = update(next);
+    assertNoNewDuplicatePlaces(state.places, next.places);
     if (!editing) throw new Error('편집 모드가 잠겨 있습니다.');
+    if (JSON.stringify(next) === JSON.stringify(state)) return result;
     state = await api({ method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Trip-Edit': '1' }, body: JSON.stringify(next) });
     return result;
   } catch (error) {
@@ -177,14 +179,11 @@ export const Storage = {
     if (!Array.isArray(records) || !records.length || records.length > 50) throw new Error('1개부터 50개까지 추가할 수 있습니다.');
     return mutate(next => {
       if (!next.groups.some(g => g.id === groupId)) throw new Error('선택한 그룹이 삭제되었습니다.');
-      const keys = new Set(next.places.filter(p => p.groupId === groupId).map(placeKey).filter(Boolean));
       const added = [];
       for (const record of records) {
-        const key = placeKey(record);
-        if (key && keys.has(key)) continue;
+        if (findDuplicate(record, next.places)) continue;
         const place = newPlace({ ...record, groupId });
         next.places.push(place); added.push(place);
-        if (key) keys.add(key);
       }
       if (next.places.length > 2000) throw new Error('전체 장소는 최대 2,000개까지 저장할 수 있습니다.');
       return { added: added.length, skipped: records.length - added.length };

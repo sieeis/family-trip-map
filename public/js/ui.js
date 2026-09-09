@@ -1,6 +1,6 @@
 // public/js/ui.js
 import { routeControls } from './route-controls.js';
-import { placeColor } from './place-colors.js';
+import { categoryColor, placeColor } from './place-colors.js';
 import { placeLink } from './place-link.js';
 import { icon, categoryIcon } from './icons.js';
 import { Parser } from './parser.js';
@@ -98,7 +98,7 @@ export const UI = {
       return;
     }
     list.innerHTML = places.map(p => `
-      <li class="place-item ${p.visited ? 'visited' : ''}" data-id="${esc(p.id)}">
+      <li class="place-item ${p.visited ? 'visited' : ''}" data-id="${esc(p.id)}" style="--place-category-color:${categoryColor(p)}">
         <div class="place-header">
           <button class="reorder-handle btn-icon" data-edit-only aria-label="장소 순서 이동" title="드래그 또는 위아래 방향키로 순서 이동">${icon('grip')}</button>
           <span class="place-name" style="--place-color:${placeColor(p)}">${categoryIcon(p.category)} ${esc(p.name)}</span>

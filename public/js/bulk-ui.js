@@ -57,7 +57,7 @@ export const BulkUI = {
       try {
         await resolveBulk(rows, {
           fetchPlace: (url, signal) => Parser.fetchPlaceData(url, { signal }),
-          existing: Storage.getPlacesByGroup(group.id),
+          existing: Storage.getPlaces(),
           onUpdate: render,
           signal: controller.signal,
         });
