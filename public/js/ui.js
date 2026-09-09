@@ -1,11 +1,12 @@
 // public/js/ui.js
+import { placeColor } from './place-colors.js';
+import { placeLink } from './place-link.js';
+import { icon, categoryIcon } from './icons.js';
 import { Parser } from './parser.js';
+import { bindReorder } from './reorder.js';
 
 const CATEGORIES = ['맛집', '관광지', '숙소', '체험/액티비티', '카페/디저트', '쇼핑', '기타'];
-const CATEGORY_EMOJIS = {
-  '맛집': '🍜', '관광지': '📍', '숙소': '🏨',
-  '체험/액티비티': '🎯', '카페/디저트': '☕', '쇼핑': '🛍️', '기타': '📌',
-};
+const groupSymbol = value => ({ '🗺️': 'map', '🏯': 'sight', '🌊': 'activity', '🌸': 'cafe', '🏔️': 'sight', '🌴': 'activity', '🏙️': 'hotel', '🎡': 'activity' }[value] || value || 'map');
 
 export const UI = {
   _editing: false,
@@ -15,7 +16,7 @@ export const UI = {
     document.body.dataset.editing = String(this._editing);
     const button = document.getElementById('btn-edit-mode');
     button.setAttribute('aria-pressed', String(this._editing));
-    button.textContent = this._editing ? '🔓' : '🔒';
+    button.innerHTML = icon(this._editing ? 'unlock' : 'lock');
     button.title = this._editing ? '편집 잠금' : '편집 잠금 해제';
     button.setAttribute('aria-label', button.title);
     document.querySelectorAll('[data-action][data-edit-only]').forEach(el => { el.hidden = !this._editing; });
@@ -24,31 +25,34 @@ export const UI = {
   // ── 그룹 렌더링 ─────────────────────────────────
   renderGroups(groups, currentGroupId, callbacks) {
     const list = document.getElementById('group-list');
+    list._reorderCleanup?.();
     if (groups.length === 0) {
       list.innerHTML = `<li class="empty-state" style="height:auto;padding:24px 12px;">
-        <div class="empty-state-icon">🗺️</div>
+        <div class="empty-state-icon">${icon('map')}</div>
         <div class="empty-state-text">그룹 없음</div>
       </li>`;
       return;
     }
     list.innerHTML = groups.map(g => `
       <li class="group-item ${g.id === currentGroupId ? 'active' : ''}" data-id="${esc(g.id)}">
-        <span class="group-emoji">${esc(g.coverEmoji || '🗺️')}</span>
+        <button class="reorder-handle btn-icon" data-edit-only aria-label="그룹 순서 이동" title="드래그 또는 위아래 방향키로 순서 이동">${icon('grip')}</button>
+        <span class="group-emoji">${icon(groupSymbol(g.coverEmoji))}</span>
         <div class="group-info">
           <div class="group-name">${esc(g.name)}</div>
           <div class="group-meta">${esc(g.region || '')} ${esc(g.startDate ? String(g.startDate).slice(0, 7) : '')}</div>
         </div>
-        <button class="btn-icon group-details" data-action="view-group" data-id="${esc(g.id)}" aria-label="그룹 정보" title="그룹 정보">ⓘ</button>
+        <button class="btn-icon group-details" data-action="view-group" data-id="${esc(g.id)}" aria-label="그룹 정보" title="그룹 정보">${icon('info')}</button>
         <div class="group-actions">
-          <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="edit-group" data-id="${esc(g.id)}" title="수정">✏️</button>
-          <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="delete-group" data-id="${esc(g.id)}" title="삭제">🗑️</button>
+          <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="edit-group" data-id="${esc(g.id)}" title="수정">${icon('edit')}</button>
+          <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="delete-group" data-id="${esc(g.id)}" title="삭제">${icon('delete')}</button>
         </div>
       </li>
     `).join('');
 
+    this._bindReorder(list, callbacks);
     list.querySelectorAll('.group-item').forEach(el => {
       el.addEventListener('click', (e) => {
-        if (e.target.closest('[data-action]')) return;
+        if (e.target.closest('[data-action], .reorder-handle')) return;
         callbacks.onSelect(el.dataset.id);
       });
     });
@@ -58,6 +62,14 @@ export const UI = {
       el.addEventListener('click', (e) => { e.stopPropagation(); callbacks.onEdit(el.dataset.id); }));
     list.querySelectorAll('[data-action="delete-group"]').forEach(el =>
       el.addEventListener('click', (e) => { e.stopPropagation(); callbacks.onDelete(el.dataset.id); }));
+  },
+
+  _bindReorder(list, callbacks) {
+    bindReorder(list, ids => callbacks.onReorder?.(ids));
+    list.onreordererror = null;
+    if (list._reorderErrorListener) list.removeEventListener('reordererror', list._reorderErrorListener);
+    list._reorderErrorListener = event => this.showToast(event.detail?.message || '순서를 저장하지 못했습니다.', 'error');
+    list.addEventListener('reordererror', list._reorderErrorListener);
   },
 
   setCurrentGroupName(name) {
@@ -76,9 +88,10 @@ export const UI = {
   // ── 장소 렌더링 ─────────────────────────────────
   renderPlaces(places, callbacks) {
     const list = document.getElementById('place-list');
+    list._reorderCleanup?.();
     if (places.length === 0) {
       list.innerHTML = `<li class="empty-state">
-        <div class="empty-state-icon">📍</div>
+        <div class="empty-state-icon">${icon('pin')}</div>
         <div class="empty-state-text">장소 없음</div>
       </li>`;
       return;
@@ -86,22 +99,24 @@ export const UI = {
     list.innerHTML = places.map(p => `
       <li class="place-item ${p.visited ? 'visited' : ''}" data-id="${esc(p.id)}">
         <div class="place-header">
-          <span class="place-name">${esc(CATEGORY_EMOJIS[p.category] || '📌')} ${esc(p.name)}</span>
+          <button class="reorder-handle btn-icon" data-edit-only aria-label="장소 순서 이동" title="드래그 또는 위아래 방향키로 순서 이동">${icon('grip')}</button>
+          <span class="place-name" style="--place-color:${placeColor(p)}">${categoryIcon(p.category)} ${esc(p.name)}</span>
           <div class="place-actions">
-            <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="edit-place" data-id="${esc(p.id)}" title="수정">✏️</button>
-            <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="delete-place" data-id="${esc(p.id)}" title="삭제">🗑️</button>
+            <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="edit-place" data-id="${esc(p.id)}" title="수정">${icon('edit')}</button>
+            <button class="btn-icon" data-edit-only ${this._editing ? '' : 'hidden'} data-action="delete-place" data-id="${esc(p.id)}" title="삭제">${icon('delete')}</button>
           </div>
         </div>
         <span class="place-category">${esc(p.category)}</span>
         ${p.address ? `<div class="place-address">${esc(p.address)}</div>` : ''}
         ${p.tags?.length ? `<div class="place-tags">${p.tags.map(t => `<span class="place-tag">${esc(t)}</span>`).join('')}</div>` : ''}
-        ${p.visited ? '<div class="place-visited-badge">✅ 방문완료</div>' : ''}
+        ${p.visited ? `<div class="place-visited-badge">${icon('check')} 방문완료</div>` : ''}
       </li>
     `).join('');
 
+    this._bindReorder(list, callbacks);
     list.querySelectorAll('.place-item').forEach(el => {
       el.addEventListener('click', (e) => {
-        if (e.target.closest('[data-action]')) return;
+        if (e.target.closest('[data-action], .reorder-handle')) return;
         callbacks.onSelect(el.dataset.id);
       });
     });
@@ -115,21 +130,21 @@ export const UI = {
   showGroupModal(group, onSave) {
     if (!this._editing || this._saving) return;
     const isEdit = !!group;
-    const emojis = ['🗺️','🏯','🌊','🌸','🏔️','🌴','🏙️','🎡','🍁','❄️','☀️','🌿'];
+    const emojis = ['map', 'sight', 'hotel', 'activity', 'cafe', 'shopping'];
     this._openModal(`
       <div class="modal-header">
         <span class="modal-title">${isEdit ? '그룹 수정' : '새 여행 그룹'}</span>
-        <button class="modal-close" id="modal-close-btn">✕</button>
+        <button class="modal-close" id="modal-close-btn" aria-label="닫기">${icon('close')}</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label class="form-label">이모지</label>
+          <label class="form-label">그룹 아이콘</label>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
             ${emojis.map(e => `<button type="button" class="emoji-btn" data-emoji="${e}" style="
               font-size:24px;width:40px;height:40px;border-radius:8px;border:2px solid transparent;
               cursor:pointer;background:var(--color-bg);
-              ${(group?.coverEmoji || '🗺️') === e ? 'border-color:var(--color-primary);' : ''}
-            ">${e}</button>`).join('')}
+              ${groupSymbol(group?.coverEmoji) === e ? 'border-color:var(--color-primary);' : ''}
+            " aria-label="그룹 아이콘 ${e}">${icon(e)}</button>`).join('')}
           </div>
           <input type="hidden" id="gf-emoji" value="${esc(group?.coverEmoji || '🗺️')}" />
         </div>
@@ -212,7 +227,7 @@ export const UI = {
     this._openModal(`
       <div class="modal-header">
         <span class="modal-title">${isEdit ? '장소 수정' : '장소 추가'}</span>
-        <button class="modal-close" id="modal-close-btn">✕</button>
+        <button class="modal-close" id="modal-close-btn" aria-label="닫기">${icon('close')}</button>
       </div>
       <div class="modal-body">
         ${!isEdit ? `
@@ -246,6 +261,13 @@ export const UI = {
             </select>
           </div>
         </div>
+        <div class="form-group pin-color-editor">
+          <label class="form-label" for="pf-pin-color">핀 색상</label>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <input type="color" id="pf-pin-color" aria-label="핀 색상" value="${placeColor(place)}" style="width:48px;height:40px;border:0;background:none;cursor:pointer;" />
+            <label><input type="checkbox" id="pf-color-auto" ${place?.pinColor ? '' : 'checked'} /> 카테고리 기본색</label>
+          </div>
+        </div>
         <div class="form-group">
           <label class="form-label">태그</label>
           <input class="form-input" id="pf-tags" value="${esc((place?.tags || []).join(' '))}" placeholder="#바다 #아이랑 #역사" />
@@ -273,6 +295,14 @@ export const UI = {
       </div>
     `);
 
+    const colorInput = document.getElementById('pf-pin-color');
+    const autoColor = document.getElementById('pf-color-auto');
+    const categoryInput = document.getElementById('pf-category');
+    const syncColor = () => { if (autoColor.checked) colorInput.value = placeColor({ category: categoryInput.value }); };
+    colorInput.addEventListener('input', () => { autoColor.checked = false; });
+    autoColor.addEventListener('change', syncColor);
+    categoryInput.addEventListener('change', syncColor);
+
     // 링크 파싱 버튼
     const parseBtn = document.getElementById('btn-parse');
     if (parseBtn) {
@@ -293,6 +323,7 @@ export const UI = {
           document.getElementById('pf-address').value = data.address || '';
           document.getElementById('pf-phone').value = data.phone || '';
           document.getElementById('pf-category').value = data.category || '기타';
+          syncColor();
           document.getElementById('pf-naverurl').value = data.naverUrl || url;
           document.getElementById('pf-placeid').value = data.naverPlaceId || '';
           document.getElementById('pf-lat').value = data.lat || '';
@@ -327,6 +358,7 @@ export const UI = {
           address: document.getElementById('pf-address').value.trim(),
           phone: document.getElementById('pf-phone').value.trim(),
           category: document.getElementById('pf-category').value,
+          pinColor: autoColor.checked ? '' : colorInput.value,
           tags,
           notes: document.getElementById('pf-notes').value.trim(),
           lat: parseFloat(document.getElementById('pf-lat').value) || null,
@@ -371,7 +403,7 @@ export const UI = {
       this._openModal(`
         <div class="modal-header">
           <span class="modal-title">가져오기 방식 선택</span>
-          <button class="modal-close" id="modal-close-btn">✕</button>
+          <button class="modal-close" id="modal-close-btn" aria-label="닫기">${icon('close')}</button>
         </div>
         <div class="modal-body">
           <p style="font-size:14px;line-height:1.7;margin-bottom:16px;">
@@ -408,14 +440,16 @@ export const UI = {
   },
 
   showPlaceDetails(place) {
+    const mobile = window.matchMedia('(max-width: 1023px), (pointer: coarse)').matches;
     this._showDetails(place.name, [
-      ['카테고리', place.category], ['주소', place.address], ['연락처', place.phone],
+      ['카테고리', place.category], ['핀 색상', placeColor(place)], ['주소', place.address], ['연락처', place.phone],
       ['태그', (place.tags || []).join(' ')], ['메모', place.notes],
       ['방문', place.visited ? '방문 완료' : '방문 전'],
-    ], place.naverUrl);
+    ], placeLink(place, mobile), mobile);
   },
 
-  _showDetails(title, fields, url) {
+  _showDetails(title, fields, url, sameTab = false) {
+    const rows = fields.filter(([, value]) => value != null && value !== '');
     let link = '';
     try {
       const parsed = new URL(url);
@@ -423,20 +457,35 @@ export const UI = {
     } catch {}
     this._openModal(`
       <div class="modal-header"><span class="modal-title">${esc(title)}</span>
-        <button class="modal-close" id="modal-close-btn" aria-label="닫기">✕</button></div>
-      <div class="modal-body"><dl class="detail-list">${fields.filter(([, value]) => value != null && value !== '').map(([label, value]) => `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('')}</dl>
-      ${link ? `<a class="detail-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">네이버 지도에서 보기 ↗</a>` : ''}</div>
+        <button class="modal-close" id="modal-close-btn" aria-label="닫기">${icon('close')}</button></div>
+      <div class="modal-body"><dl class="detail-list">${rows.map(([label, value], index) => {
+        if (!['주소', '연락처'].includes(label)) return `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`;
+        const attrs = `class="detail-copy" data-copy-index="${index}" title="${esc(label)} 복사" aria-label="${esc(label)} 복사: ${esc(value)}"`;
+        return `<dt><button ${attrs}>${esc(label)}</button></dt><dd><button ${attrs}>${esc(value)} ${icon('copy')}</button></dd>`;
+      }).join('')}</dl>
+      ${link ? `<a class="detail-link" href="${esc(link)}" target="${sameTab ? '_self' : '_blank'}" rel="noopener noreferrer">네이버지도에서 보기 ↗</a>` : ''}</div>
       <div class="modal-footer"><button class="btn btn-ghost" id="modal-cancel-btn">닫기</button></div>
     `);
+    document.querySelectorAll('[data-copy-index]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const [label, value] = rows[Number(button.dataset.copyIndex)];
+        try {
+          await navigator.clipboard.writeText(String(value));
+          this.showToast(`${label}가 복사되었습니다.`);
+        } catch {
+          this.showToast('복사하지 못했습니다. 브라우저의 클립보드 권한을 확인해주세요.', 'error');
+        }
+      });
+    });
   },
 
   showExportOptions() {
     if (this._saving) return Promise.resolve(null);
     return new Promise(resolve => {
       this._openModal(`
-        <div class="modal-header"><span class="modal-title">내보내기</span><button class="modal-close" id="modal-close-btn" aria-label="닫기">✕</button></div>
+        <div class="modal-header"><span class="modal-title">내보내기</span><button class="modal-close" id="modal-close-btn" aria-label="닫기">${icon('close')}</button></div>
         <div class="modal-body export-options">
-          <button class="btn btn-primary" data-export="zip">전체 다운로드 (ZIP)</button>
+          <button class="btn btn-primary" data-export="zip">모든 형식 (ZIP)</button>
           <button class="btn btn-ghost" data-export="json">JSON</button>
           <button class="btn btn-ghost" data-export="md">Markdown (.md)</button>
           <button class="btn btn-ghost" data-export="xlsx">Excel (.xlsx)</button>

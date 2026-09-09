@@ -1,0 +1,11 @@
+.app-icon { width:20px; height:20px; display:inline-block; vertical-align:middle; flex:none; overflow:visible; color:inherit; }
+.app-icon .icon-bloom,.app-icon .icon-midnight { display:none; }
+.app-icon .icon-glass { fill:none; stroke:currentColor; stroke-width:1.65; stroke-linecap:round; stroke-linejoin:round; }
+.app-icon .icon-glass .icon-tint { fill:currentColor; stroke:none; opacity:.08; }
+.app-icon .icon-bloom { fill:currentColor; stroke:none; }
+.app-icon .icon-bloom .icon-tint { fill:var(--accent-secondary,currentColor); opacity:.14; }
+.app-icon .icon-midnight { fill:none; stroke:currentColor; stroke-width:1.4; stroke-linecap:square; stroke-linejoin:miter; }
+.app-icon .icon-midnight .icon-tint { stroke:var(--accent-secondary,currentColor); opacity:.35; }
+body[data-theme="bloom"] .app-icon .icon-glass,body[data-theme="midnight"] .app-icon .icon-glass { display:none; }
+body[data-theme="glass"] .app-icon .icon-glass,body[data-theme="bloom"] .app-icon .icon-bloom,body[data-theme="midnight"] .app-icon .icon-midnight { display:inline; }
+[data-icon] { display:inline-flex; align-items:center; justify-content:center; flex:none; }

@@ -77,3 +77,13 @@ test('failed writes do not return success and cross-site writes are rejected', a
   assert.equal((await call(handler, 'PUT', data, { 'content-type': 'text/plain' })).status, 415);
   assert.equal((await call(handler, 'PUT', { groups: 'bad' })).status, 400);
 });
+
+
+test('custom pin colors persist, old data defaults safely and invalid colors are rejected', () => {
+  const colored = validateData({ groups: [group], places: [{ ...place, pinColor: '#Ab12EF' }] });
+  assert.equal(colored.places[0].pinColor, '#Ab12EF');
+  assert.equal(validateData(data).places[0].pinColor, '');
+  for (const pinColor of ['red', '#fff', '#zzzzzz', '" onload="alert(1)', 123]) {
+    assert.throws(() => validateData({ groups: [group], places: [{ ...place, pinColor }] }));
+  }
+});

@@ -1,3 +1,4 @@
+import { placeKey } from './bulk-import.js';
 // Local keys are retained as a backup of the old, device-only app.
 const GROUPS_KEY = 'ftm_groups';
 const PLACES_KEY = 'ftm_places';
@@ -7,6 +8,25 @@ let ready = false;
 let busy = false;
 let loading = null;
 let editing = false;
+
+// Reorder only the supplied slots so filtered-out rows retain their positions.
+export function reorderRows(rows, ids) {
+  const selected = new Set(ids);
+  if (!Array.isArray(ids) || selected.size !== ids.length ||
+      ids.some(id => !rows.some(row => row.id === id))) throw new Error('목록이 변경되었습니다. 새로고침 후 다시 이동해주세요.');
+  const byId = new Map(rows.map(row => [row.id, row]));
+  let index = 0;
+  return rows.map(row => selected.has(row.id) ? byId.get(ids[index++]) : row);
+}
+
+function newPlace(data) {
+  return {
+        id: crypto.randomUUID(), groupId: data.groupId, naverUrl: data.naverUrl || '',
+        naverPlaceId: data.naverPlaceId || '', name: data.name || '장소명 없음', address: data.address || '',
+        phone: data.phone || '', category: data.category || '기타', tags: data.tags || [], notes: data.notes || '',
+        pinColor: data.pinColor || '', visited: false, lat: data.lat ?? null, lng: data.lng ?? null, addedAt: new Date().toISOString(),
+  };
+}
 
 async function api(options = {}) {
   let response;
@@ -67,6 +87,16 @@ export const Storage = {
   getGroups() { return structuredClone(state.groups); },
   getPlaces() { return structuredClone(state.places); },
   getPlacesByGroup(groupId) { return this.getPlaces().filter(p => p.groupId === groupId); },
+  reorderGroups(ids) {
+    return mutate(next => { next.groups = reorderRows(next.groups, ids); });
+  },
+  reorderPlaces(groupId, ids) {
+    return mutate(next => {
+      const groupPlaces = next.places.filter(p => p.groupId === groupId);
+      reorderRows(groupPlaces, ids); // Reject rows moved/deleted by another device.
+      next.places = reorderRows(next.places, ids);
+    });
+  },
   addGroup(data) {
     return mutate(next => {
       const group = {
@@ -94,14 +124,26 @@ export const Storage = {
   addPlace(data) {
     return mutate(next => {
       if (!next.groups.some(g => g.id === data.groupId)) throw new Error('선택한 그룹이 삭제되었습니다.');
-      const place = {
-        id: crypto.randomUUID(), groupId: data.groupId, naverUrl: data.naverUrl || '',
-        naverPlaceId: data.naverPlaceId || '', name: data.name || '장소명 없음', address: data.address || '',
-        phone: data.phone || '', category: data.category || '기타', tags: data.tags || [], notes: data.notes || '',
-        visited: false, lat: data.lat ?? null, lng: data.lng ?? null, addedAt: new Date().toISOString(),
-      };
+      const place = newPlace(data);
       next.places.push(place);
       return place;
+    });
+  },
+  addPlaces(groupId, records) {
+    if (!Array.isArray(records) || !records.length || records.length > 50) throw new Error('1개부터 50개까지 추가할 수 있습니다.');
+    return mutate(next => {
+      if (!next.groups.some(g => g.id === groupId)) throw new Error('선택한 그룹이 삭제되었습니다.');
+      const keys = new Set(next.places.filter(p => p.groupId === groupId).map(placeKey).filter(Boolean));
+      const added = [];
+      for (const record of records) {
+        const key = placeKey(record);
+        if (key && keys.has(key)) continue;
+        const place = newPlace({ ...record, groupId });
+        next.places.push(place); added.push(place);
+        if (key) keys.add(key);
+      }
+      if (next.places.length > 2000) throw new Error('전체 장소는 최대 2,000개까지 저장할 수 있습니다.');
+      return { added: added.length, skipped: records.length - added.length };
     });
   },
   updatePlace(id, data) {

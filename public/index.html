@@ -5,26 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>가족 여행지 지도</title>
   <link rel="stylesheet" href="/css/style.css" />
-  <!-- Pretendard 폰트 -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
+  <link rel="stylesheet" href="/css/icons.css" />
+  <link rel="stylesheet" href="/css/themes.css" />
+  <link rel="stylesheet" href="/css/bulk.css" />
 </head>
-<body data-editing="false">
+<body data-editing="false" data-theme="glass">
 
   <!-- 헤더 -->
   <header class="app-header">
     <div class="header-left">
-      <span class="app-logo">🗺️</span>
+      <span class="app-logo" data-icon="map" aria-hidden="true"></span>
       <h1 class="app-title">가족 여행지 지도</h1>
     </div>
     <div class="header-right">
       <span id="sync-status" role="status" aria-live="polite"></span>
-      <button id="btn-sync" class="btn btn-ghost">새로고침</button>
-      <button id="btn-edit-mode" class="btn btn-ghost" aria-pressed="false" title="편집 잠금 해제" aria-label="편집 잠금 해제">🔒</button>
+      <button id="btn-sync" class="btn btn-ghost header-icon" aria-label="새로고침" title="새로고침"><span data-icon="refresh" aria-hidden="true"></span></button>
+      <button id="btn-design" class="btn btn-ghost header-icon" aria-label="디자인 선택" title="디자인 선택"><span data-icon="design" aria-hidden="true"></span></button>
+      <button id="btn-edit-mode" class="btn btn-ghost" aria-pressed="false" title="편집 잠금 해제" aria-label="편집 잠금 해제"><span data-icon="lock" aria-hidden="true"></span></button>
       <button id="btn-migrate" class="btn btn-ghost" data-edit-only hidden>기존 데이터 공유</button>
+      <button data-edit-only id="btn-add-bulk" class="btn btn-ghost">여러 장소 추가</button>
       <button data-edit-only id="btn-add-group" class="btn btn-primary">+ 그룹 추가</button>
-      <button id="btn-export" class="btn btn-ghost">📤 내보내기</button>
+      <button id="btn-export" class="btn btn-ghost header-icon" aria-label="내보내기" title="내보내기"><span data-icon="export" aria-hidden="true"></span></button>
       <label data-edit-only class="btn btn-ghost" style="cursor:pointer;">
-        📥 가져오기
+        <span data-icon="import" aria-hidden="true"></span> 가져오기
         <input type="file" id="btn-import-file" accept=".json" style="display:none;" />
       </label>
     </div>
@@ -36,9 +39,13 @@
     <aside class="panel panel-groups" id="panel-groups">
       <div class="panel-header">
         <span class="panel-title">여행 그룹</span>
+        <button class="btn btn-sm btn-ghost btn-list-options" data-options="groups" aria-expanded="false">정렬</button>
         <button id="btn-toggle-groups" class="btn-icon panel-toggle" aria-controls="group-content" aria-expanded="true" aria-label="여행 그룹 접기" title="여행 그룹 접기">⇆</button>
       </div>
       <div class="panel-content" id="group-content">
+      <div class="list-options">
+      <div class="sort-bar"><label for="sort-groups">그룹 정렬</label><select id="sort-groups" class="filter-select"><option value="manual">사용자 순서</option><option value="asc">가나다순</option><option value="desc">가나다 역순</option></select></div>
+      </div>
       <ul class="group-list" id="group-list">
         <!-- JS로 렌더링 -->
       </ul>
@@ -48,11 +55,14 @@
     <!-- 중앙: 장소 목록 -->
     <aside class="panel panel-places" id="panel-places">
       <div class="panel-header">
-        <span class="panel-title" id="current-group-name">그룹을 선택하세요</span>
+        <span class="panel-heading"><span class="panel-title" id="current-group-name">그룹을 선택하세요</span><span id="mobile-selected-place">선택한 장소 없음</span></span>
         <button data-edit-only id="btn-add-place" class="btn btn-sm btn-primary" style="display:none;">+ 장소</button>
+        <button class="btn btn-sm btn-ghost btn-list-options" data-options="places" aria-expanded="false">정렬·필터</button>
         <button id="btn-toggle-places" class="btn-icon panel-toggle" aria-controls="place-content" aria-expanded="true" aria-label="장소 목록 접기" title="장소 목록 접기">⇆</button>
       </div>
       <div class="panel-content" id="place-content">
+      <div class="list-options">
+      <div class="sort-bar"><label for="sort-places">장소 정렬</label><select id="sort-places" class="filter-select"><option value="manual">사용자 순서</option><option value="asc">가나다순</option><option value="desc">가나다 역순</option></select></div>
       <!-- 필터 -->
       <div class="filter-bar" id="filter-bar" style="display:none;">
         <select id="filter-category" class="filter-select">
@@ -67,6 +77,7 @@
         </select>
         <input type="text" id="filter-tag" class="filter-input" placeholder="태그 검색 (#바다)" />
       </div>
+      </div>
       <ul class="place-list" id="place-list">
         <!-- JS로 렌더링 -->
       </ul>
@@ -75,18 +86,18 @@
 
     <!-- 우측: 지도 -->
     <section class="map-container" id="map-container">
-      <div id="map" hidden></div>
-      <div id="map-placeholder" class="map-placeholder"><button id="btn-load-map" class="btn btn-primary">지도 보기</button></div>
+      <div id="map"></div>
+      <div id="map-labels" class="map-labels"></div>
+      <nav id="map-category-filters" class="map-category-filters" aria-label="지도 카테고리 필터" hidden></nav>
+      <div id="map-placeholder" class="map-placeholder"><div><p id="map-loading-status" role="status">지도를 불러오는 중…</p><button id="btn-retry-map" class="btn btn-primary" hidden>다시 시도</button></div></div>
+      <nav class="mobile-tab-bar" aria-label="지도 범위">
+        <button class="map-view-btn" id="btn-map-group" aria-label="그룹 전체 지도 보기" title="그룹 전체" aria-pressed="false">ALL</button>
+        <button class="map-view-btn" id="btn-map-place" aria-label="선택 장소 지도 보기" title="선택 장소" aria-pressed="false" disabled>①</button>
+        <button class="map-view-btn" id="btn-map-location" aria-label="내 현재 위치로 이동" title="내 현재 위치로 이동" data-icon="locate"></button>
+      </nav>
     </section>
 
   </main>
-
-  <!-- 모바일 하단 탭 -->
-  <nav class="mobile-tab-bar">
-    <button class="tab-btn active" id="mobile-tab-map" data-tab="map">🗺️ 지도</button>
-    <button class="tab-btn" id="mobile-tab-list" data-tab="list">📍 목록</button>
-    <button class="tab-btn" id="mobile-tab-groups" data-tab="groups">🗂️ 그룹</button>
-  </nav>
 
   <!-- 모달 -->
   <div class="modal-overlay" id="modal-overlay" style="display:none;">

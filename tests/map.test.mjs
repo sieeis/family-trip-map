@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-test('list-only view needs no SDK; map loads once and unchanged data keeps its viewport', async t => {
+test('queued first selection centers after SDK init; groups refit and unchanged data preserves viewport', async t => {
   const originals = Object.fromEntries(['window', 'document', 'naver'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   t.after(() => {
     for (const [key, descriptor] of Object.entries(originals)) {
@@ -9,7 +9,12 @@ test('list-only view needs no SDK; map loads once and unchanged data keeps its v
       else delete globalThis[key];
     }
   });
-  const counters = { scripts: 0, maps: 0, markers: 0, fit: 0, pan: 0 };
+  const counters = { scripts: 0, maps: 0, markers: 0, fit: 0, pan: 0, zoom: 0 };
+  let markerClick;
+  let details = 0;
+  let center;
+  let label;
+  let initCallback;
   const fakeWindow = { APP_CONFIG: { naverMapClientId: 'test-key' } };
   Object.defineProperty(globalThis, 'window', { configurable: true, value: fakeWindow });
   Object.defineProperty(globalThis, 'document', { configurable: true, value: {
@@ -28,11 +33,11 @@ test('list-only view needs no SDK; map loads once and unchanged data keeps its v
     } },
   } });
   Object.defineProperty(globalThis, 'naver', { configurable: true, value: { maps: {
-    Map: class { constructor() { counters.maps++; } fitBounds() { counters.fit++; } panTo() { counters.pan++; } setZoom() {} },
-    InfoWindow: class { close() {} },
-    Marker: class { constructor() { counters.markers++; } setMap() {} },
-    LatLng: class {}, LatLngBounds: class { extend() {} }, Point: class {},
-    MapTypeId: { NORMAL: 'normal' }, Event: { addListener() {}, trigger() {} },
+    Map: class { constructor() { counters.maps++; } fitBounds(bounds, options) { counters.fit++; assert.equal(options.top, 64); } setCenter(point) { center = point; counters.pan++; } setZoom() { counters.zoom++; } autoResize() {} },
+    InfoWindow: class { constructor(options) { assert.equal(options.disableAutoPan, true); } close() {} setContent(value) { label = value; } open() {} },
+    Marker: class { constructor(options) { counters.markers++; if (options.title === '내 현재 위치') return; assert.match(options.icon.content, /stroke="#172033"/); assert.match(options.icon.content, /<svg/); } setMap() {} setPosition() {} },
+    LatLng: class { constructor(lat, lng) { this.lat = lat; this.lng = lng; } }, Size: class {}, LatLngBounds: class { extend() {} }, Point: class {},
+    MapTypeId: { NORMAL: 'normal' }, Event: { addListener(marker, event, cb) { markerClick = cb; }, once(map, event, cb) { assert.equal(event, 'init'); initCallback = cb; }, trigger() {} },
   } } });
   const { MapModule } = await import('../public/js/map.js?lazy-test');
   const places = [{ id: 'a', name: 'A', lat: 34, lng: 126 }, { id: 'b', name: 'B', lat: 35, lng: 127 }];
@@ -40,7 +45,14 @@ test('list-only view needs no SDK; map loads once and unchanged data keeps its v
   MapModule.panToPlace(places[0]);
   assert.equal(counters.scripts, 0);
   assert.equal(counters.maps, 0);
-  await Promise.all([MapModule.load(), MapModule.load()]);
+  const loading = Promise.all([MapModule.load(), MapModule.load()]);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(counters.pan, 0);
+  initCallback();
+  await loading;
+  assert.equal(center.lat, 34);
+  assert.equal(counters.fit, 0);
+  MapModule.fitGroup();
   assert.equal(counters.scripts, 1);
   assert.equal(counters.maps, 1);
   assert.equal(counters.markers, 2);
@@ -50,6 +62,25 @@ test('list-only view needs no SDK; map loads once and unchanged data keeps its v
   assert.equal(counters.fit, 1);
   MapModule.showPlaces(places.map(p => ({ ...p, notes: '메모만 변경' })));
   assert.equal(counters.fit, 1);
+  MapModule.fitGroup();
+  assert.equal(counters.fit, 2, 'same group click must refit');
+  MapModule.onMarkerClick(() => details++);
+  MapModule.panToPlace(places[1]);
+  assert.equal(center.lat, 35);
+  assert.equal(details, 0, 'list selection must not open details');
+  markerClick();
+  assert.equal(details, 1);
+  MapModule.resize();
+  assert.equal(center.lat, 35);
+  assert.equal(MapModule.panToPlace({ id: 'missing', lat: null, lng: null }), false);
+  const previousZoom = counters.zoom;
+  MapModule.setUserLocation({latitude:37.5,longitude:127.1}, true);
+  assert.equal(center.lat, 37.5);
+  assert.equal(counters.zoom, previousZoom, 'locate must preserve zoom');
+  MapModule.setUserLocation({latitude:37.6,longitude:127.2});
+  assert.equal(center.lat, 37.5, 'live updates must not move the camera');
+  MapModule.resize();
+  assert.equal(counters.zoom, previousZoom, 'resize after locate must preserve zoom');
   await MapModule.load();
   assert.equal(counters.scripts, 1);
 });
