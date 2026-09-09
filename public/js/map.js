@@ -1,4 +1,5 @@
 // public/js/map.js
+import { routeControls } from './route-controls.js';
 import { placeColor } from './place-colors.js';
 import { categoryIcon } from './icons.js';
 import { shortName, availableLabels } from './map-labels.js';
@@ -20,8 +21,21 @@ let _selection = null;
 let _onDetails = null;
 let _labelFrame = null;
 let _userMarker = null;
+let _routeIds = [];
+let _routeEditing = false;
+let _draftIds = [];
+let _onRouteAction = null;
 
 export const MapModule = {
+  onRouteAction(callback) { _onRouteAction = callback; },
+  setRoute(ids, editing = false, draftIds = []) {
+    const changed = JSON.stringify(ids) !== JSON.stringify(_routeIds);
+    _routeIds = [...ids];
+    _routeEditing = editing;
+    _draftIds = [...draftIds];
+    if (_ready && changed) this._renderPlaces();
+    else this._scheduleLabels();
+  },
   setUserLocation(coords, center = false) {
     if (!_ready || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)) return false;
     const position = new naver.maps.LatLng(coords.latitude, coords.longitude);
@@ -82,6 +96,8 @@ export const MapModule = {
     _infoWindow = new naver.maps.InfoWindow({ disableAutoPan: true, borderWidth: 0, backgroundColor: 'transparent', anchorSize: new naver.maps.Size(0, 0), pixelOffset: new naver.maps.Point(22, 0) });
     for (const event of ['idle', 'bounds_changed']) naver.maps.Event.addListener(_map, event, () => this._scheduleLabels());
     document.getElementById?.('map-labels')?.addEventListener('click', event => {
+      const action = event.target.closest('[data-route-action]');
+      if (action) { event.stopPropagation(); _onRouteAction?.(action.dataset.routeAction, action.dataset.routePlace); return; }
       const button = event.target.closest('[data-details]');
       const place = button && _places.find(p => p.id === button.dataset.details);
       if (place) { event.stopPropagation(); _onDetails?.(place); }
@@ -111,12 +127,12 @@ export const MapModule = {
     const rows = Array.from(container.querySelectorAll('.map-pin[data-place-id]')).map(pin => {
       const place = _places.find(p => p.id === pin.dataset.placeId);
       const rect = pin.getBoundingClientRect();
-      return { place, pin: rect, box: {left:rect.right + 6, right:rect.right + 122, top:rect.top - 6, bottom:rect.top + 50} };
+      return { place, pin: rect, box: {left:rect.right + 6, right:rect.right + (_routeEditing ? 178 : 122), top:rect.top - 6, bottom:rect.top + (_routeEditing ? 102 : 50)} };
     }).filter(row => row.place && row.pin.width > 0);
     const obstacles = Array.from(document.querySelectorAll('.map-category-btn, .map-view-btn')).filter(el => el.getClientRects().length).map(el => el.getBoundingClientRect());
     const selectedId = _selection?.type === 'place' ? _selection.id : null;
     layer.style.zIndex = selectedId ? '31' : '20';
-    layer.innerHTML = availableLabels(rows, bounds, obstacles, selectedId).map(({place,box,selected}) => `<div class="map-place-card" style="left:${box.left-bounds.left}px;top:${box.top-bounds.top}px;z-index:${selected ? 2 : 1}"><span title="${escapeHtml(place.name)}">${escapeHtml(shortName(place.name))}</span><button type="button" data-details="${escapeHtml(place.id)}" aria-label="${escapeHtml(place.name)} 상세보기">상세보기</button></div>`).join('');
+    layer.innerHTML = availableLabels(rows, bounds, obstacles, selectedId).map(({place,box,selected}) => `<div class="map-place-card${_routeEditing ? ' has-route-controls' : ''}" style="left:${box.left-bounds.left}px;top:${box.top-bounds.top}px;z-index:${selected ? 2 : 1}"><span title="${escapeHtml(place.name)}">${escapeHtml(shortName(place.name))}</span><button type="button" data-details="${escapeHtml(place.id)}" aria-label="${escapeHtml(place.name)} 상세보기">상세보기</button>${routeControls(place.id, {editing:_routeEditing, ids:_draftIds})}</div>`).join('');
   },
 
   showPlaces(places) {
@@ -214,6 +230,7 @@ export const MapModule = {
           <path d="M19 46C15 39 3 28 3 19a16 16 0 1 1 32 0c0 9-12 20-16 27Z" fill="${color}" stroke="#172033" stroke-width="3" stroke-linejoin="round"/>
           <circle cx="19" cy="19" r="11" fill="#fff"/>
           ${categoryIcon(place.category).replace('<svg ', '<svg x="10" y="10" width="18" height="18" style="width:18px;height:18px;color:#172033;--accent-secondary:#172033" ')}
+          ${_routeIds.includes(place.id) ? `<g class="route-pin-number" aria-label="방문 순서 ${_routeIds.indexOf(place.id) + 1}"><circle cx="39" cy="3" r="12" fill="#172033" stroke="white" stroke-width="2"/><text x="39" y="7" text-anchor="middle" fill="white" font-size="12" font-weight="700">${_routeIds.indexOf(place.id) + 1}</text></g>` : ''}
         </svg>`,
         anchor: new naver.maps.Point(19, 46),
       },

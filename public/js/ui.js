@@ -1,4 +1,5 @@
 // public/js/ui.js
+import { routeControls } from './route-controls.js';
 import { placeColor } from './place-colors.js';
 import { placeLink } from './place-link.js';
 import { icon, categoryIcon } from './icons.js';
@@ -52,7 +53,7 @@ export const UI = {
     this._bindReorder(list, callbacks);
     list.querySelectorAll('.group-item').forEach(el => {
       el.addEventListener('click', (e) => {
-        if (e.target.closest('[data-action], .reorder-handle')) return;
+        if (e.target.closest('[data-action], [data-route-action], .reorder-handle')) return;
         callbacks.onSelect(el.dataset.id);
       });
     });
@@ -107,6 +108,8 @@ export const UI = {
           </div>
         </div>
         <span class="place-category">${esc(p.category)}</span>
+        ${callbacks.routeIds?.includes(p.id) ? `<span class="route-order-badge">${callbacks.routeIds.indexOf(p.id) + 1}번</span>` : ''}
+        ${routeControls(p.id, {editing: callbacks.routeEditing, ids: callbacks.draftIds || []})}
         ${p.address ? `<div class="place-address">${esc(p.address)}</div>` : ''}
         ${p.tags?.length ? `<div class="place-tags">${p.tags.map(t => `<span class="place-tag">${esc(t)}</span>`).join('')}</div>` : ''}
         ${p.visited ? `<div class="place-visited-badge">${icon('check')} 방문완료</div>` : ''}
@@ -116,7 +119,7 @@ export const UI = {
     this._bindReorder(list, callbacks);
     list.querySelectorAll('.place-item').forEach(el => {
       el.addEventListener('click', (e) => {
-        if (e.target.closest('[data-action], .reorder-handle')) return;
+        if (e.target.closest('[data-action], [data-route-action], .reorder-handle')) return;
         callbacks.onSelect(el.dataset.id);
       });
     });

@@ -1,3 +1,5 @@
+import { RouteDraft } from './route-draft.js';
+import { RouteUI } from './route-ui.js';
 // public/js/app.js
 import { BulkUI } from './bulk-ui.js';
 import { startLocation, locationError } from './location.js';
@@ -10,6 +12,8 @@ import { Design } from './design.js';
 
 const state = {
   currentGroupId: null,
+  currentRouteId: null,
+  routeSort: 'manual',
   filterCategory: '',
   filterTag: '',
   editing: false,
@@ -19,6 +23,7 @@ const state = {
   mapView: 'group',
 };
 
+const draft = new RouteDraft();
 const collator = new Intl.Collator('ko', { numeric: true, sensitivity: 'base' });
 function sorted(rows, mode) {
   return mode === 'manual' ? rows : rows.toSorted((a, b) => (mode === 'asc' ? 1 : -1) * collator.compare(a.name, b.name));
@@ -37,6 +42,7 @@ export const App = {
         el.classList.toggle('active', el.dataset.id === place.id));
     });
 
+    this._bindRoutes();
     this._bindHeader();
     this._bindMobileTabs();
     this._bindFilters();
@@ -88,6 +94,8 @@ export const App = {
     if (Storage.isSaving) { UI.showToast('저장이 끝난 후 전환해주세요.'); return; }
     state.editing = value;
     Storage.setEditing(value);
+    if (!value) draft.cancel();
+    MapModule.setRoute(this.routeIds(), value, draft.ids);
     UI.setEditing(value);
     document.body.dataset.editing = String(value);
     const button = document.getElementById('btn-edit-mode');
@@ -168,7 +176,7 @@ export const App = {
         if (mobile.matches && !collapsed) this._setPanel(name === 'groups' ? 'places' : 'groups', true);
         requestAnimationFrame(() => MapModule.resize());
       };
-      button.addEventListener('click', toggle);
+      button.addEventListener('click', event => { event.stopPropagation(); toggle(); });
       button.closest('.panel-header').addEventListener('click', event => {
         if (mobile.matches && !event.target.closest('button, input, select, a')) toggle();
       });
@@ -182,12 +190,12 @@ export const App = {
   },
 
   _updateMapControls() {
-    const place = Storage.getPlacesByGroup(state.currentGroupId).find(p => p.id === state.selectedPlaceId);
+    const place = Storage.getPlaces().find(p => p.id === state.selectedPlaceId);
     const valid = place && Number.isFinite(place.lat) && Number.isFinite(place.lng);
     if (!valid) { state.selectedPlaceId = null; if (state.mapView !== 'user') state.mapView = 'group'; }
     const groupButton = document.getElementById('btn-map-group');
     const placeButton = document.getElementById('btn-map-place');
-    groupButton.disabled = !state.currentGroupId;
+    groupButton.disabled = !state.currentGroupId && !state.currentRouteId;
     placeButton.disabled = !valid;
     groupButton.setAttribute('aria-pressed', String(state.mapView === 'group'));
     placeButton.setAttribute('aria-pressed', String(state.mapView === 'place'));
@@ -197,6 +205,10 @@ export const App = {
   },
 
   renderShared() {
+    if (draft.reconcile(Storage.getPlaces())) UI.showToast('삭제된 장소를 작성 중인 Route에서 제외했습니다.');
+    if (state.currentRouteId && !Storage.getRoutes().some(r => r.id === state.currentRouteId)) state.currentRouteId = null;
+    this.renderRoutes();
+    if (state.currentRouteId) { this.renderGroups(); this.renderPlaces(); return; }
     const groups = sorted(Storage.getGroups(), state.groupSort);
     if (!groups.some(g => g.id === state.currentGroupId)) {
       state.currentGroupId = null;
@@ -211,6 +223,100 @@ export const App = {
     }
     this.renderGroups();
     this._updateMapControls();
+  },
+
+  orderedPlaces(ids) {
+    const places = new Map(Storage.getPlaces().map(p => [p.id, p]));
+    return ids.map(id => places.get(id)).filter(Boolean);
+  },
+  routeIds() {
+    return draft.active ? draft.ids : (Storage.getRoutes().find(r => r.id === state.currentRouteId)?.placeIds || []);
+  },
+  renderRoutes() {
+    RouteUI.render(sorted(Storage.getRoutes(), state.routeSort), state.currentRouteId, Storage.getPlaces(), state.editing, state.routeSort);
+    RouteUI.renderDraft(draft.ids, Storage.getPlaces(), state.editing, draft.active);
+  },
+  selectRoute(id) {
+    state.currentRouteId = id;
+    state.selectedPlaceId = null;
+    state.filterCategory = ''; state.filterTag = ''; state.mapView = 'group';
+    document.getElementById('filter-category').value = '';
+    document.getElementById('filter-tag').value = '';
+    RouteUI.setView('routes');
+    this.renderGroups(); this.renderPlaces();
+    MapModule.fitGroup(); this._showMapTab();
+  },
+  async routeAction(action, id) {
+    if (!state.editing) { UI.showToast('자물쇠를 눌러 편집 모드를 켜주세요.'); return; }
+    if (Storage.isSaving || UI._saving) return;
+    if (action === 'finish') {
+      if (!draft.ids.length) { UI.showToast('Route에 장소를 먼저 추가해주세요.'); return; }
+      const ids = [...draft.ids];
+      RouteUI.showNameModal(null, this.orderedPlaces(ids), async data => {
+        const route = await Storage.addRoute({name: data.name, placeIds: ids});
+        draft.cancel(); this.selectRoute(route.id);
+        UI.showToast('Route가 생성되었습니다.');
+      });
+      return;
+    }
+    if (action === 'new' && draft.active) {
+      UI.showToast('작성 중인 Route를 먼저 종료(e)하거나 취소(x)해주세요.'); return;
+    }
+    try {
+      if (action === 'add') draft.add(id, Storage.getPlaces());
+      else if (action === 'remove') draft.remove(id);
+      else if (action === 'cancel') draft.cancel();
+      else if (action === 'new') draft.start();
+      this.renderPlaces(); this.renderRoutes();
+      MapModule.setRoute(this.routeIds(), state.editing, draft.ids);
+    } catch (error) { UI.showToast(error.message, 'error'); }
+  },
+  _bindRoutes() {
+    MapModule.onRouteAction((action, id) => this.routeAction(action, id));
+    document.getElementById('place-list').addEventListener('click', event => {
+      const button = event.target.closest('[data-route-action]');
+      if (button) { event.stopPropagation(); this.routeAction(button.dataset.routeAction, button.dataset.routePlace); }
+    });
+    RouteUI.init({
+      onView: view => {
+        RouteUI.setView(view);
+        if (view === 'groups' && state.currentGroupId) this.selectGroup(state.currentGroupId);
+        this._setPanel('groups', false);
+        if (window.matchMedia('(max-width: 1023px)').matches) this._setPanel('places', true);
+      },
+      onSelect: id => this.selectRoute(id),
+      onSort: mode => { state.routeSort = mode; this.renderRoutes(); },
+      onNew: () => this.routeAction('new'),
+      onFinish: () => this.routeAction('finish'),
+      onCancel: () => this.routeAction('cancel'),
+      onRemove: id => this.routeAction('remove', id),
+      onDetails: id => {
+        const route = Storage.getRoutes().find(r => r.id === id);
+        if (route) RouteUI.showDetails(route, Storage.getPlaces(), placeId => {
+          UI.closeModal(); this.selectRoute(id);
+          const place = Storage.getPlaces().find(p => p.id === placeId);
+          if (place && MapModule.panToPlace(place)) { state.selectedPlaceId = placeId; state.mapView = 'place'; this._updateMapControls(); }
+        });
+      },
+      onEdit: id => {
+        const route = Storage.getRoutes().find(r => r.id === id);
+        if (!state.editing || !route) return;
+        RouteUI.showNameModal(route, this.orderedPlaces(route.placeIds), async data => {
+          await Storage.updateRoute(id, {name: data.name}); this.renderShared();
+        });
+      },
+      onDelete: async id => {
+        if (!state.editing || !(await UI.showConfirm('이 Route를 삭제할까요? 등록된 장소는 유지됩니다.'))) return;
+        try { await Storage.deleteRoute(id); this.renderShared(); }
+        catch (error) { UI.showToast(error.message, 'error'); }
+      },
+      onReorder: async ids => {
+        if (!state.editing) return;
+        try { await Storage.reorderRoutes(ids); state.routeSort = 'manual'; }
+        catch (error) { UI.showToast(error.message, 'error'); }
+        this.renderRoutes();
+      },
+    });
   },
 
   // ── 그룹 ────────────────────────────────────────
@@ -261,6 +367,9 @@ export const App = {
   },
 
   selectGroup(id) {
+    state.currentRouteId = null;
+    RouteUI.setView('groups');
+    this.renderRoutes();
     state.currentGroupId = id;
     state.selectedPlaceId = null;
     state.mapView = 'group';
@@ -302,8 +411,12 @@ export const App = {
   },
 
   renderPlaces() {
-    if (!state.currentGroupId) return;
-    let places = Storage.getPlacesByGroup(state.currentGroupId);
+    if (!state.currentGroupId && !state.currentRouteId) return;
+    const route = Storage.getRoutes().find(r => r.id === state.currentRouteId);
+    let places = route ? this.orderedPlaces(route.placeIds) : Storage.getPlacesByGroup(state.currentGroupId);
+    if (route) UI.setCurrentGroupName(route.name);
+    document.getElementById('btn-add-place').style.display = route ? 'none' : 'inline-block';
+    document.getElementById('sort-places').disabled = !!route;
     this.renderCategoryFilters(places);
 
     if (state.filterCategory) {
@@ -317,11 +430,13 @@ export const App = {
       );
     }
 
-    places = sorted(places, state.placeSort);
+    if (!route) places = sorted(places, state.placeSort);
     UI.renderPlaces(places, {
+      routeIds: this.routeIds(), draftIds: draft.ids, routeEditing: state.editing,
       onSelect: (id) => {
         if (state.selectedPlaceId === id) {
-          this.selectGroup(state.currentGroupId);
+          if (state.currentRouteId) this.selectRoute(state.currentRouteId);
+          else this.selectGroup(state.currentGroupId);
           return;
         }
         const place = Storage.getPlaces().find(p => p.id === id);
@@ -337,7 +452,10 @@ export const App = {
         if (!state.editing) return;
         const groupId = state.currentGroupId;
         try {
-          await Storage.reorderPlaces(groupId, ids);
+          if (route) {
+            const selected = new Set(ids); let index = 0;
+            await Storage.updateRoute(route.id, {placeIds: route.placeIds.map(id => selected.has(id) ? ids[index++] : id)});
+          } else await Storage.reorderPlaces(groupId, ids);
           state.placeSort = 'manual';
           document.getElementById('sort-places').value = 'manual';
         } catch (error) { UI.showToast(error.message, 'error'); }
@@ -346,7 +464,7 @@ export const App = {
       onEdit: (id) => {
         if (!state.editing) return;
         const place = Storage.getPlaces().find(p => p.id === id);
-        UI.showPlaceModal(state.currentGroupId, place, async (data) => {
+        UI.showPlaceModal(place.groupId, place, async (data) => {
           await Storage.updatePlace(id, data);
           this.renderPlaces();
           UI.showToast('장소가 수정되었습니다.');
@@ -359,7 +477,7 @@ export const App = {
         if (!ok) return;
         try { await Storage.deletePlace(id); }
         catch (error) { UI.showToast(error.message, 'error'); return; }
-        this.renderPlaces();
+        this.renderShared();
         UI.showToast('장소가 삭제되었습니다.');
       },
     });
@@ -371,7 +489,9 @@ export const App = {
       state.selectedPlaceId = null;
       state.mapView = 'group';
     }
+    MapModule.setRoute(this.routeIds(), state.editing, draft.ids);
     MapModule.showPlaces(places);
+    this.renderRoutes();
     this._updateMapControls();
   },
 
@@ -383,6 +503,7 @@ export const App = {
       this.setEditing(!state.editing);
       this.renderGroups();
       this.renderPlaces();
+      this.renderRoutes();
     });
     document.getElementById('btn-add-group').addEventListener('click', () => {
       if (!state.editing) return;
@@ -395,7 +516,7 @@ export const App = {
     });
 
     document.getElementById('btn-add-bulk').addEventListener('click', () => {
-      if (!state.editing || !state.currentGroupId) return;
+      if (!state.editing || !state.currentGroupId || state.currentRouteId) return;
       const group = Storage.getGroups().find(g => g.id === state.currentGroupId);
       if (!group) return;
       BulkUI.open(group, async records => {
@@ -408,7 +529,7 @@ export const App = {
     });
 
     document.getElementById('btn-add-place').addEventListener('click', () => {
-      if (!state.editing || !state.currentGroupId) return;
+      if (!state.editing || !state.currentGroupId || state.currentRouteId) return;
       UI.showPlaceModal(state.currentGroupId, null, async (data) => {
         await Storage.addPlace(data);
         this.renderPlaces();
@@ -417,7 +538,7 @@ export const App = {
     });
 
     document.getElementById('btn-export').addEventListener('click', async () => {
-      const groupId = state.currentGroupId;
+      const groupId = state.currentRouteId ? null : state.currentGroupId;
       if (!groupId) { UI.showToast('내보낼 그룹을 선택해주세요.'); return; }
       const format = await UI.showExportOptions();
       if (!format) return;
@@ -510,14 +631,14 @@ export const App = {
       }, error => { finish(); UI.showToast(locationError(error), 'error'); }, {enableHighAccuracy:true,maximumAge:5000,timeout:15000});
     });
     document.getElementById('btn-map-group').addEventListener('click', () => {
-      if (!state.currentGroupId) return;
+      if (!state.currentGroupId && !state.currentRouteId) return;
       state.mapView = 'group';
       this.setCategory('');
       MapModule.fitGroup();
       this._updateMapControls();
     });
     document.getElementById('btn-map-place').addEventListener('click', () => {
-      const place = Storage.getPlacesByGroup(state.currentGroupId).find(p => p.id === state.selectedPlaceId);
+      const place = Storage.getPlaces().find(p => p.id === state.selectedPlaceId);
       if (!place || !MapModule.panToPlace(place)) return;
       state.mapView = 'place';
       this._updateMapControls();

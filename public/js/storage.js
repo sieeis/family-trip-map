@@ -3,7 +3,7 @@ import { placeKey } from './bulk-import.js';
 const GROUPS_KEY = 'ftm_groups';
 const PLACES_KEY = 'ftm_places';
 const MIGRATED_KEY = 'ftm_shared_migrated_v1';
-let state = { groups: [], places: [], revision: null };
+let state = { groups: [], places: [], routes: [], revision: null };
 let ready = false;
 let busy = false;
 let loading = null;
@@ -45,7 +45,23 @@ async function api(options = {}) {
   if (!Array.isArray(data.groups) || !Array.isArray(data.places) || !('revision' in data)) {
     throw new Error('올바르지 않은 공유 데이터 응답입니다.');
   }
-  return data;
+  if (data.routes !== undefined && !Array.isArray(data.routes)) throw new Error('올바르지 않은 Route 데이터 응답입니다.');
+  return { ...data, routes: data.routes ?? [] };
+}
+
+function routeData(data, next) {
+  if (typeof data.name !== 'string' || !data.name.trim() || data.name.length > 200
+      || !Array.isArray(data.placeIds) || data.placeIds.length > 2000
+      || new Set(data.placeIds).size !== data.placeIds.length
+      || data.placeIds.some(id => !next.places.some(place => place.id === id))) {
+    throw new Error('Route 이름과 장소 목록을 확인해주세요. 삭제된 장소는 추가할 수 없습니다.');
+  }
+  return { name: data.name.trim(), placeIds: [...data.placeIds] };
+}
+
+function pruneRoutes(next) {
+  const ids = new Set(next.places.map(place => place.id));
+  next.routes.forEach(route => { route.placeIds = route.placeIds.filter(id => ids.has(id)); });
 }
 
 async function mutate(update) {
@@ -85,6 +101,30 @@ export const Storage = {
     try { return await loading; } finally { loading = null; }
   },
   getGroups() { return structuredClone(state.groups); },
+  getRoutes() { return structuredClone(state.routes); },
+  addRoute(data) {
+    return mutate(next => {
+      const fields = routeData(data, next);
+      if (!fields.placeIds.length) throw new Error('Route에 장소를 하나 이상 추가해주세요.');
+      if (next.routes.length >= 2000) throw new Error('Route는 최대 2,000개까지 저장할 수 있습니다.');
+      const route = { id: crypto.randomUUID(), ...fields, createdAt: new Date().toISOString() };
+      next.routes.push(route);
+      return route;
+    });
+  },
+  updateRoute(id, data) {
+    return mutate(next => {
+      const route = next.routes.find(route => route.id === id);
+      if (!route) throw new Error('이 Route는 다른 기기에서 삭제되었습니다.');
+      Object.assign(route, routeData({ ...route, ...data }, next));
+    });
+  },
+  deleteRoute(id) {
+    return mutate(next => { next.routes = next.routes.filter(route => route.id !== id); });
+  },
+  reorderRoutes(ids) {
+    return mutate(next => { next.routes = reorderRows(next.routes, ids); });
+  },
   getPlaces() { return structuredClone(state.places); },
   getPlacesByGroup(groupId) { return this.getPlaces().filter(p => p.groupId === groupId); },
   reorderGroups(ids) {
@@ -119,6 +159,7 @@ export const Storage = {
     return mutate(next => {
       next.groups = next.groups.filter(g => g.id !== id);
       next.places = next.places.filter(p => p.groupId !== id);
+      pruneRoutes(next);
     });
   },
   addPlace(data) {
@@ -154,25 +195,30 @@ export const Storage = {
     });
   },
   deletePlace(id) {
-    return mutate(next => { next.places = next.places.filter(p => p.id !== id); });
+    return mutate(next => { next.places = next.places.filter(p => p.id !== id); pruneRoutes(next); });
   },
   exportData() {
     if (!ready) throw new Error('공유 데이터를 먼저 불러와주세요.');
-    return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), groups: state.groups, places: state.places }, null, 2);
+    return JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), groups: state.groups, places: state.places, routes: state.routes }, null, 2);
   },
   importData(jsonString, mode = 'merge') {
     const data = JSON.parse(jsonString);
     if (!Array.isArray(data?.groups) || !Array.isArray(data?.places)) throw new Error('올바른 백업 파일이 아닙니다.');
+    if (data.routes !== undefined && !Array.isArray(data.routes)) throw new Error('올바른 Route 백업 파일이 아닙니다.');
+    const routes = data.routes ?? [];
     return mutate(next => {
       if (mode === 'overwrite') {
         next.groups = data.groups;
         next.places = data.places;
+        next.routes = routes;
         return;
       }
       const groupIds = new Set(next.groups.map(g => g.id));
       const placeIds = new Set(next.places.map(p => p.id));
       next.groups.push(...data.groups.filter(g => !groupIds.has(g.id)));
       next.places.push(...data.places.filter(p => !placeIds.has(p.id)));
+      const routeIds = new Set(next.routes.map(route => route.id));
+      next.routes.push(...routes.filter(route => !routeIds.has(route.id)));
     });
   },
   hasLegacyData() {

@@ -7,6 +7,8 @@ import { BlobPreconditionFailedError } from '@vercel/blob';
 const group = { id: 'group-1', name: '여행', createdAt: '2026-09-08T00:00:00.000Z' };
 const place = { id: 'place-1', groupId: 'group-1', name: '마블오션', lat: 34.9479375, lng: 126.3890683 };
 const data = { groups: [group], places: [place] };
+const route = { id: 'route-1', name: '방문 순서', placeIds: ['place-2', 'place-1'], createdAt: '2026-09-09T00:00:00.000Z' };
+const routeData = { groups: [group, { ...group, id: 'group-2' }], places: [place, { ...place, id: 'place-2', groupId: 'group-2' }], routes: [route] };
 function memoryStore() {
   let current = { groups: [], places: [], revision: null };
   let version = 0;
@@ -86,4 +88,30 @@ test('custom pin colors persist, old data defaults safely and invalid colors are
   for (const pinColor of ['red', '#fff', '#zzzzzz', '" onload="alert(1)', 123]) {
     assert.throws(() => validateData({ groups: [group], places: [{ ...place, pinColor }] }));
   }
+});
+
+test('routes preserve cross-group order and normalize old data', () => {
+  assert.deepEqual(validateData(data).routes, []);
+  assert.deepEqual(validateData(routeData).routes, [route]);
+  assert.deepEqual(validateData({ ...routeData, routes: [{ ...route, placeIds: [] }] }).routes[0].placeIds, []);
+  for (const routes of [null, {}, [route, route], Array(2001).fill(route),
+    [{ ...route, name: '' }], [{ ...route, name: 'a'.repeat(201) }],
+    [{ ...route, placeIds: ['missing'] }], [{ ...route, placeIds: ['place-1', 'place-1'] }],
+    [{ ...route, placeIds: null }], [{ ...route, id: '<script>' }], [{ ...route, createdAt: 'invalid' }]]) {
+    assert.throws(() => validateData({ ...routeData, routes }));
+  }
+});
+
+test('routes survive saves, reject outdated clients and reject dangling references', async () => {
+  const handler = createTripsHandler(memoryStore());
+  const saved = await call(handler, 'PUT', { ...routeData, revision: null });
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await call(handler, 'GET')).body.routes, [route]);
+  const legacy = await call(handler, 'PUT', { ...data, revision: saved.body.revision });
+  assert.equal(legacy.status, 409);
+  assert.deepEqual((await call(handler, 'GET')).body.routes, [route]);
+  assert.equal((await call(handler, 'PUT', { ...routeData, places: [place], revision: saved.body.revision })).status, 400);
+  const cleared = await call(handler, 'PUT', { ...routeData, routes: [], revision: saved.body.revision });
+  assert.equal(cleared.status, 200);
+  assert.equal((await call(handler, 'PUT', { ...routeData, revision: saved.body.revision })).status, 409);
 });

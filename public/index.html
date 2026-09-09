@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/css/icons.css" />
   <link rel="stylesheet" href="/css/themes.css" />
   <link rel="stylesheet" href="/css/bulk.css" />
+  <link rel="stylesheet" href="/css/routes.css" />
 </head>
 <body data-editing="false" data-theme="glass">
 
@@ -38,7 +39,10 @@
     <!-- 좌측: 여행 그룹 목록 -->
     <aside class="panel panel-groups" id="panel-groups">
       <div class="panel-header">
-        <span class="panel-title">여행 그룹</span>
+        <nav class="collection-tabs" aria-label="목록 종류">
+          <button id="btn-view-groups" class="collection-tab" aria-pressed="true">그룹</button>
+          <button id="btn-view-routes" class="collection-tab" aria-pressed="false">Route</button>
+        </nav>
         <button class="btn btn-sm btn-ghost btn-list-options" data-options="groups" aria-expanded="false">정렬</button>
         <button id="btn-toggle-groups" class="btn-icon panel-toggle" aria-controls="group-content" aria-expanded="true" aria-label="여행 그룹 접기" title="여행 그룹 접기">⇆</button>
       </div>
@@ -50,6 +54,11 @@
         <!-- JS로 렌더링 -->
       </ul>
       </div>
+      <div class="panel-content" id="routes-content" hidden>
+        <div class="sort-bar"><label for="sort-routes">Route 정렬</label><select id="sort-routes" class="filter-select"><option value="manual">사용자 순서</option><option value="asc">가나다순</option><option value="desc">가나다 역순</option></select></div>
+        <button data-edit-only id="btn-new-route" class="btn btn-sm btn-ghost route-new">+ Route 만들기</button>
+        <ul class="group-list" id="route-list" aria-label="Route 목록"></ul>
+      </div>
     </aside>
 
     <!-- 중앙: 장소 목록 -->
@@ -60,6 +69,7 @@
         <button class="btn btn-sm btn-ghost btn-list-options" data-options="places" aria-expanded="false">정렬·필터</button>
         <button id="btn-toggle-places" class="btn-icon panel-toggle" aria-controls="place-content" aria-expanded="true" aria-label="장소 목록 접기" title="장소 목록 접기">⇆</button>
       </div>
+      <section id="route-draft-bar" class="route-draft-bar" aria-label="작성 중인 Route" hidden></section>
       <div class="panel-content" id="place-content">
       <div class="list-options">
       <div class="sort-bar"><label for="sort-places">장소 정렬</label><select id="sort-places" class="filter-select"><option value="manual">사용자 순서</option><option value="asc">가나다순</option><option value="desc">가나다 역순</option></select></div>

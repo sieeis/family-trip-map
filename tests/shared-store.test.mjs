@@ -26,4 +26,5 @@ test('shared reads preserve the strong ETag needed by conditional saves', async 
   const result = await sharedStore.read();
   assert.equal(result.revision, '"version-1"');
   assert.deepEqual(result.groups, []);
+  assert.deepEqual(result.routes, []);
 });
