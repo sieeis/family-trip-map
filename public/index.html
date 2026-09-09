@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/css/themes.css" />
   <link rel="stylesheet" href="/css/bulk.css" />
   <link rel="stylesheet" href="/css/routes.css" />
+  <link rel="stylesheet" href="/css/route-view.css" />
 </head>
 <body data-editing="false" data-theme="glass">
 
@@ -95,8 +96,21 @@
     </aside>
 
     <!-- 우측: 지도 -->
-    <section class="map-container" id="map-container">
-      <div id="map"></div>
+    <section class="map-container" id="map-container" data-canvas-view="map">
+      <nav class="canvas-tabs" role="tablist" aria-label="지도 또는 Route 보기">
+        <button id="btn-canvas-map" class="canvas-tab" role="tab" type="button" aria-selected="true" aria-controls="map" tabindex="0">Map</button>
+        <button id="btn-canvas-route" class="canvas-tab" role="tab" type="button" aria-selected="false" aria-controls="route-canvas" tabindex="-1">Route</button>
+      </nav>
+      <div id="map" role="tabpanel" aria-labelledby="btn-canvas-map"></div>
+      <section id="route-canvas" class="route-canvas" role="tabpanel" aria-labelledby="btn-canvas-route" tabindex="0" hidden>
+        <div class="route-canvas-header">
+          <div class="route-canvas-heading"><h2>Route</h2><span id="route-canvas-count"></span></div>
+          <label class="route-canvas-label" for="route-canvas-select">방문할 Route</label>
+          <select id="route-canvas-select" class="filter-select"></select>
+          <p class="route-canvas-hint">방문 순서대로 살펴보세요. 장소를 누르면 상세 내용을 볼 수 있습니다.</p>
+        </div>
+        <div id="route-canvas-content"></div>
+      </section>
       <div id="map-labels" class="map-labels"></div>
       <div id="map-route-status" class="map-route-status" role="status" hidden></div>
       <nav id="map-category-filters" class="map-category-filters" aria-label="지도 카테고리 필터" hidden></nav>

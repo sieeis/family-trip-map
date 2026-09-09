@@ -10,8 +10,8 @@ import { validateData } from '../lib/trip-data.js';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
 let data = validateData({groups:[{id:'g1',name:'서울'},{id:'g2',name:'부산'}],places:[
   {id:'a',groupId:'g1',name:'서울숲',address:'서울 성동구 뚝섬로 273',category:'관광지',lat:37.54,lng:127.04},
-  {id:'b',groupId:'g1',name:'경복궁',lat:37.57,lng:126.97},
-  {id:'c',groupId:'g2',name:'해운대',lat:35.16,lng:129.16},
+  {id:'b',groupId:'g1',name:'경복궁',address:'서울 종로구 사직로 161',category:'관광지',pinColor:'#FF00FF',notes:'입장 시간 확인\n<script>메모 그대로</script>',lat:37.57,lng:126.97},
+  {id:'c',groupId:'g2',name:'해운대',address:'부산 해운대구',category:'체험/액티비티',lat:35.16,lng:129.16},
 ]});
 let revision = 1;
 let failSave = false;
@@ -56,6 +56,10 @@ window.naver = {maps:{
 try {
   await page.goto(liveSDK ? 'https://navermap-mu.vercel.app' : localOrigin);
   await page.locator('.place-item').first().waitFor();
+  assert.equal(await page.locator('#btn-canvas-map').getAttribute('aria-selected'),'true');
+  await page.locator('#btn-canvas-route').click();
+  assert.equal(await page.locator('.route-node').count(),0);
+  await page.locator('#btn-canvas-map').click();
   assert.equal(await page.locator('.route-controls').count(),0);
   await page.locator('#btn-edit-mode').click();
   // Registering the same manual place in another group must leave storage untouched.
@@ -266,6 +270,50 @@ try {
   await page.locator('#btn-view-routes').click();
   await page.locator('.route-select').click();
   assert.deepEqual(await page.locator('.place-item').evaluateAll(rows=>rows.map(r=>r.dataset.id)),['b','c']);
+  const beforeTab = liveSDK ? await page.evaluate(async()=>{
+    const {MapModule}=await import('/js/map.js'); const m=MapModule._map;
+    m.setZoom(13,false); return {zoom:m.getZoom(),lat:m.getCenter().lat(),lng:m.getCenter().lng()};
+  }) : null;
+  const beforeTabRevision=revision;
+  await page.locator('#btn-canvas-route').click();
+  assert.equal(await page.locator('#btn-canvas-route').getAttribute('aria-selected'),'true');
+  assert.deepEqual(await page.locator('.route-node').evaluateAll(nodes=>nodes.map(n=>n.dataset.placeId)),['b','c']);
+  const palace=page.locator('.route-node[data-place-id="b"]');
+  await palace.getByText('서울 종로구 사직로 161',{exact:true}).waitFor();
+  assert.match(await palace.textContent(),/입장 시간 확인/);
+  assert.equal(await palace.locator('script').count(),0,'notes are text, never HTML');
+  assert.ok(await palace.locator('svg').count(),'category icon is present');
+  await palace.click();
+  await page.locator('#modal-content .modal-title').getByText('경복궁',{exact:true}).waitFor();
+  assert.match(await page.locator('#modal-content').textContent(),/서울 종로구 사직로 161/);
+  await page.locator('#modal-cancel-btn').click();
+  assert.equal(await page.locator('#btn-canvas-route').getAttribute('aria-selected'),'true');
+  await page.screenshot({path:'artifacts/routes/timeline-mobile.png',fullPage:true});
+  await page.locator('#btn-canvas-map').click();
+  if(beforeTab) {
+    const after=await page.evaluate(async()=>{const {MapModule}=await import('/js/map.js');const m=MapModule._map;return {zoom:m.getZoom(),lat:m.getCenter().lat(),lng:m.getCenter().lng()};});
+    assert.deepEqual(after,beforeTab,'tabs preserve map camera');
+  }
+  assert.equal(revision,beforeTabRevision,'reading route nodes must never save data');
+  await page.setViewportSize({width:1440,height:1000});
+  await page.locator('#btn-canvas-route').click();
+  await page.screenshot({path:'artifacts/routes/timeline-desktop.png',fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+  const emptyRouteId=await page.evaluate(async()=>{
+    const {Storage}=await import('/js/storage.js'); const {App}=await import('/js/app.js');
+    Storage.setEditing(true);
+    const route=await Storage.addRoute({name:'빈 Route',placeIds:['a']});
+    await Storage.updateRoute(route.id,{placeIds:[]});
+    Storage.setEditing(false); App.renderShared(); return route.id;
+  });
+  await page.locator('#route-canvas-select').selectOption(emptyRouteId);
+  assert.equal(await page.locator('#btn-canvas-route').getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('.route-node').count(),0);
+  await page.locator('#route-canvas-select').selectOption(firstId);
+  assert.deepEqual(await page.locator('.route-node').evaluateAll(nodes=>nodes.map(n=>n.dataset.placeId)),['b','c']);
+
+  await page.reload();
+  assert.equal(await page.locator('#btn-canvas-map').getAttribute('aria-selected'),'true','reload starts with Map');
   assert.deepEqual(errors,[]);
-  console.log('PASS: route editor search/group/add/remove, drag/keyboard/buttons order, atomic retry/cancel/reload, highlighted dashed arrows, existing-route map add/remove/reorder/transfer/cancel/save, desktop/mobile; SDK='+ (liveSDK?'live':'mock') + '; storage=in-memory.');
+  console.log('PASS: route editor search/group/add/remove, drag/keyboard/buttons order, atomic retry/cancel/reload, highlighted dashed arrows, existing-route map add/remove/reorder/transfer/cancel/save, Map/Route timeline tabs/order/details/empty states/camera preservation, desktop/mobile; SDK='+ (liveSDK?'live':'mock') + '; storage=in-memory.');
 } catch (error) { await page.screenshot({path:'artifacts/routes/failure.png',fullPage:true}); console.log('Page errors', errors); throw error; } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); }
