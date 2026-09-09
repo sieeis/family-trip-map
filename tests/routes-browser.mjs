@@ -119,6 +119,25 @@ try {
   assert.deepEqual(await page.locator('.place-item').evaluateAll(rows=>rows.map(r=>r.dataset.id)),['c','b','a']);
   if (!liveSDK) assert.equal(await page.locator('.mock-route-line[data-arrow="true"]').count(),2);
   await page.screenshot({path:'artifacts/routes/route-arrows.png',fullPage:true});
+  const enterMapKeepingCamera = async () => {
+  // A user may already be zoomed into one end of the selected Route.
+  const cameraBefore = await page.evaluate(async()=>{
+    const {MapModule}=await import('/js/map.js');
+    const map=MapModule._map;
+    if (!map.getZoom) return null;
+    map.setZoom(13,false);map.setCenter(new naver.maps.LatLng(37.55,127.01));
+    return {zoom:map.getZoom(),lat:map.getCenter().lat(),lng:map.getCenter().lng()};
+  });
+  await page.locator('#btn-route-edit-map').click();
+  if (cameraBefore) {
+    // Let panel ResizeObserver and its queued frames complete before checking.
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))));
+    const cameraAfter=await page.evaluate(async()=>{const {MapModule}=await import('/js/map.js');const m=MapModule._map;return {zoom:m.getZoom(),lat:m.getCenter().lat(),lng:m.getCenter().lng()};});
+    assert.equal(cameraAfter.zoom,cameraBefore.zoom,'map entry must retain zoom');
+    assert.ok(Math.abs(cameraAfter.lat-cameraBefore.lat)<1e-7,'map entry must retain center latitude');
+    assert.ok(Math.abs(cameraAfter.lng-cameraBefore.lng)<1e-7,'map entry must retain center longitude');
+  }
+  };
   const mapAction = async (id, action) => {
     await page.locator('#btn-map-group').click();
     // Separate city-scale fixture pins before testing a real marker click.
@@ -129,7 +148,7 @@ try {
   await editFirst();
   await page.locator('#rf-name').fill('지도에서 이어서 수정');
   await page.locator('[data-route-edit-action="remove"][data-id="b"]').click();
-  await page.locator('#btn-route-edit-map').click();
+  await enterMapKeepingCamera();
   await page.waitForFunction(()=>document.getElementById('modal-overlay').style.display==='none');
   assert.deepEqual(await page.locator('.route-draft-place-name').allTextContents(),['해운대','서울숲']);
   assert.equal(await page.locator('.route-draft-name').textContent(),'지도에서 이어서 수정');
@@ -141,7 +160,7 @@ try {
   await page.locator('[data-draft-action="edit"]').click();
   assert.deepEqual(await page.locator('#route-edit-list > li').evaluateAll(rows=>rows.map(r=>r.dataset.id)),['b','c']);
   assert.equal(await page.locator('#rf-name').inputValue(),'지도에서 이어서 수정');
-  await page.locator('#btn-route-edit-map').click();
+  await enterMapKeepingCamera();
   await page.screenshot({path:'artifacts/routes/map-edit-desktop.png',fullPage:true});
   await page.locator('[data-draft-action="cancel"]').click();
   assert.deepEqual(data.routes[0].placeIds,['c','b','a']);
@@ -200,7 +219,7 @@ try {
   await page.locator('#btn-view-routes').click();
   await editFirst();
   await page.locator('#rf-name').fill('지도에서 저장한 Route');
-  await page.locator('#btn-route-edit-map').click();
+  await enterMapKeepingCamera();
   await mapAction('a','remove');
   await page.locator('[data-draft-action="up"][data-id="b"]').click();
   await page.screenshot({path:'artifacts/routes/map-edit-mobile.png',fullPage:true});
@@ -221,7 +240,7 @@ try {
   assert.equal(data.places.length,3,'map removal must preserve registered places');
   await page.locator('#btn-view-routes').click();
   await editFirst();
-  await page.locator('#btn-route-edit-map').click();
+  await enterMapKeepingCamera();
   await page.locator('[data-draft-action="remove"][data-id="b"]').click();
   await page.locator('[data-draft-action="remove"][data-id="c"]').click();
   assert.equal(await page.locator('[data-draft-action="finish"]').isEnabled(),true,'existing route may remain empty');

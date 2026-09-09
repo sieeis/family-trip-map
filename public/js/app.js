@@ -236,7 +236,8 @@ export const App = {
     RouteUI.render(sorted(Storage.getRoutes(), state.routeSort), state.currentRouteId, Storage.getPlaces(), state.editing, state.routeSort);
     RouteUI.renderDraft(draft.ids, Storage.getPlaces(), state.editing, draft.active, draft.routeId ? {id:draft.routeId,name:draft.name} : null);
   },
-  selectRoute(id) {
+  selectRoute(id, { preserveViewport = false } = {}) {
+    if (preserveViewport) MapModule.preserveViewport();
     state.currentRouteId = id;
     state.selectedPlaceId = null;
     state.filterCategory = ''; state.filterTag = ''; state.mapView = 'group';
@@ -244,7 +245,8 @@ export const App = {
     document.getElementById('filter-tag').value = '';
     RouteUI.setView('routes');
     this.renderGroups(); this.renderPlaces();
-    MapModule.fitGroup(); this._showMapTab();
+    if (!preserveViewport) MapModule.fitGroup();
+    this._showMapTab();
   },
   async routeAction(action, id) {
     if (!state.editing) { UI.showToast('자물쇠를 눌러 편집 모드를 켜주세요.'); return; }
@@ -292,7 +294,7 @@ export const App = {
       try { draft.edit(expected, data); }
       catch (error) { UI.showToast(error.message, 'error'); return false; }
       UI.closeModal();
-      this.selectRoute(id);
+      this.selectRoute(id, { preserveViewport: true });
       this._setPanel('places', false);
       this._showMapTab();
       UI.showToast('핀의 R/+로 추가, −로 제거한 뒤 e로 저장하세요.');

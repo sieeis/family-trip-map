@@ -29,6 +29,11 @@ let _onRouteAction = null;
 let _routeLines = [];
 
 export const MapModule = {
+  preserveViewport() {
+    // Subsequent marker updates and panel resizes must not refit the added candidates.
+    _selection = { type: 'viewport' };
+    this._highlightSelection();
+  },
   onRouteAction(callback) { _onRouteAction = callback; },
   setRoute(ids, editing = false, draftIds = []) {
     const changed = JSON.stringify(ids) !== JSON.stringify(_routeIds);
@@ -224,6 +229,7 @@ export const MapModule = {
   _applySelection() {
     if (!_ready) return;
     this._highlightSelection();
+    if (_selection?.type === 'viewport') { this._scheduleLabels(); return; }
     if (_selection?.type === 'user') return;
     if (_selection?.type === 'place') {
       const place = _places.find(p => p.id === _selection.id);
