@@ -2,6 +2,7 @@
 import { routeControls } from './route-controls.js';
 import { categoryColor, placeColor } from './place-colors.js';
 import { placeLink } from './place-link.js';
+import { normalizeImageUrls } from './image-links.js';
 import { icon, categoryIcon } from './icons.js';
 import { Parser } from './parser.js';
 import { bindReorder } from './reorder.js';
@@ -279,6 +280,15 @@ export const UI = {
           <label class="form-label">메모</label>
           <textarea class="form-textarea" id="pf-notes" placeholder="방문 팁, 주의사항 등">${esc(place?.notes || '')}</textarea>
         </div>
+        <div class="form-group">
+          <p class="form-hint" id="pf-image-url-hint">이미지 주소를 최대 3개까지 입력하세요.</p>
+          ${[1, 2, 3].map(number => `
+          <div class="form-group">
+          <label class="form-label" for="pf-image-url-${number}">이미지 URL ${number}</label>
+          <input class="form-input" type="url" id="pf-image-url-${number}" maxlength="4096" aria-describedby="pf-image-url-hint" value="${esc(place?.imageUrls?.[number - 1] || '')}" placeholder="https://example.com/image.jpg" />
+          </div>
+          `).join('')}
+        </div>
         ${isEdit ? `
         <div class="form-group">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -364,6 +374,7 @@ export const UI = {
           pinColor: autoColor.checked ? '' : colorInput.value,
           tags,
           notes: document.getElementById('pf-notes').value.trim(),
+          imageUrls: normalizeImageUrls([1, 2, 3].map(number => document.getElementById(`pf-image-url-${number}`).value)),
           lat: parseFloat(document.getElementById('pf-lat').value) || null,
           lng: parseFloat(document.getElementById('pf-lng').value) || null,
           visited: document.getElementById('pf-visited')?.checked || false,
@@ -448,16 +459,19 @@ export const UI = {
       ['카테고리', place.category], ['핀 색상', placeColor(place)], ['주소', place.address], ['연락처', place.phone],
       ['태그', (place.tags || []).join(' ')], ['메모', place.notes],
       ['방문', place.visited ? '방문 완료' : '방문 전'],
-    ], placeLink(place, mobile), mobile);
+    ], placeLink(place, mobile), mobile, place.imageUrls);
   },
 
-  _showDetails(title, fields, url, sameTab = false) {
+  _showDetails(title, fields, url, sameTab = false, imageUrls = []) {
     const rows = fields.filter(([, value]) => value != null && value !== '');
     let link = '';
     try {
       const parsed = new URL(url);
       if (['https:', 'http:'].includes(parsed.protocol)) link = parsed.href;
     } catch {}
+    const imageLinks = (Array.isArray(imageUrls) ? imageUrls.slice(0, 3) : []).flatMap(value => {
+      try { return normalizeImageUrls([value]); } catch { return []; }
+    });
     this._openModal(`
       <div class="modal-header"><span class="modal-title">${esc(title)}</span>
         <button class="modal-close" id="modal-close-btn" aria-label="닫기">${icon('close')}</button></div>
@@ -466,6 +480,7 @@ export const UI = {
         const attrs = `class="detail-copy" data-copy-index="${index}" title="${esc(label)} 복사" aria-label="${esc(label)} 복사: ${esc(value)}"`;
         return `<dt><button ${attrs}>${esc(label)}</button></dt><dd><button ${attrs}>${esc(value)} ${icon('copy')}</button></dd>`;
       }).join('')}</dl>
+      ${imageLinks.length ? `<div aria-label="사용자 이미지 링크" style="display:flex;flex-wrap:wrap;gap:8px 20px;">${imageLinks.map((imageUrl, index) => `<a class="detail-link" href="${esc(imageUrl)}" target="_blank" rel="noopener noreferrer">이미지 ${index + 1} 보기 ↗</a>`).join('')}</div>` : ''}
       ${link ? `<a class="detail-link" href="${esc(link)}" target="${sameTab ? '_self' : '_blank'}" rel="noopener noreferrer">네이버지도에서 보기 ↗</a>` : ''}</div>
       <div class="modal-footer"><button class="btn btn-ghost" id="modal-cancel-btn">닫기</button></div>
     `);

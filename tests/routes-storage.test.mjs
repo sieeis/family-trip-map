@@ -25,7 +25,10 @@ test('route operations, backups, cleanup, conflicts and failures preserve shared
   assert.deepEqual(first.getRoutes(), []);
   const groupA = await first.addGroup({ name: 'A' });
   const groupB = await first.addGroup({ name: 'B' });
-  const a = await first.addPlace({ groupId: groupA.id, name: 'a' });
+  const a = await first.addPlace({ groupId: groupA.id, name: 'a', imageUrls:['https://example.com/a.jpg'] });
+  await first.updatePlace(a.id,{notes:'메모만 수정'});
+  assert.deepEqual(first.getPlaces()[0].imageUrls,['https://example.com/a.jpg']);
+  await assert.rejects(()=>first.updatePlace(a.id,{imageUrls:Array(4).fill('https://example.com/a.jpg')}),/최대 3개/);
   const b = await first.addPlace({ groupId: groupB.id, name: 'b' });
   const route = await first.addRoute({ name: '교차 그룹', placeIds: [b.id, a.id] });
   const other = await first.addRoute({ name: '두 번째', placeIds: [a.id] });
@@ -46,6 +49,7 @@ test('route operations, backups, cleanup, conflicts and failures preserve shared
   await second.refresh();
   const backup = first.exportData();
   assert.equal(JSON.parse(backup).version, 2);
+  assert.deepEqual(JSON.parse(backup).places[0].imageUrls,['https://example.com/a.jpg']);
   offline = true;
   await assert.rejects(() => first.deleteRoute(route.id));
   assert.equal(first.getRoutes().length, 2);
@@ -57,6 +61,9 @@ test('route operations, backups, cleanup, conflicts and failures preserve shared
   await first.deleteGroup(groupA.id);
   assert.deepEqual(first.getRoutes().map(r => r.placeIds), [[], []]);
   await first.importData(backup, 'overwrite');
+  assert.deepEqual(first.getPlaces()[0].imageUrls,['https://example.com/a.jpg']);
+  await first.updatePlace(a.id,{imageUrls:[]});
+  assert.deepEqual(first.getPlaces()[0].imageUrls,[]);
   assert.deepEqual(first.getRoutes()[1].placeIds, [b.id, a.id]);
   await first.deleteRoute(route.id);
   await first.importData(backup, 'merge');

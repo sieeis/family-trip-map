@@ -75,6 +75,22 @@ try {
   assert.equal(await page.locator('#pf-name').inputValue(),'서울숲');
   await page.locator('#modal-cancel-btn').click();
   await page.locator('.group-item[data-id="g1"] .group-name').click();
+  await page.locator('[data-action="edit-place"][data-id="b"]').click();
+  assert.equal(await page.locator('input[id^="pf-image-url-"]').count(),3);
+  await page.locator('#pf-image-url-1').fill('javascript:alert(1)');
+  const beforeInvalidImage=revision;
+  await page.locator('#modal-save-btn').click();
+  await page.getByText(/이미지 URL 1에 올바른/).waitFor();
+  assert.equal(revision,beforeInvalidImage);
+  for(let i=1;i<=3;i++) await page.locator(`#pf-image-url-${i}`).fill(`https://example.com/photo-${i}.jpg`);
+  await page.locator('#modal-save-btn').click();
+  await page.waitForFunction(()=>document.getElementById('modal-overlay').style.display==='none');
+  assert.deepEqual(data.places.find(p=>p.id==='b').imageUrls,[1,2,3].map(i=>`https://example.com/photo-${i}.jpg`));
+  await page.locator('[data-action="edit-place"][data-id="b"]').click();
+  assert.equal(await page.locator('#pf-image-url-3').inputValue(),'https://example.com/photo-3.jpg');
+  await page.locator('#pf-image-url-3').fill('');
+  await page.locator('#modal-cancel-btn').click();
+  assert.equal(data.places.find(p=>p.id==='b').imageUrls.length,3);
   await page.locator('.map-pin[data-place-id="b"]').click();
   await page.locator('#map-labels [data-route-place="b"].route-r').click();
   await page.locator('.place-item[data-id="a"] .route-r').click();
@@ -292,6 +308,15 @@ try {
   await palace.click();
   await page.locator('#modal-content .modal-title').getByText('경복궁',{exact:true}).waitFor();
   assert.match(await page.locator('#modal-content').textContent(),/서울 종로구 사직로 161/);
+  for(let i=1;i<=3;i++) {
+    const link=page.locator('#modal-content').getByRole('link',{name:`이미지 ${i} 보기`});
+    assert.equal(await link.getAttribute('href'),`https://example.com/photo-${i}.jpg`);
+    assert.equal(await link.getAttribute('target'),'_blank');
+    assert.match(await link.getAttribute('rel'),/noopener/);
+  }
+  assert.equal(await page.locator('#modal-content img').count(),0,'links do not download remote images');
+  await page.screenshot({path:'artifacts/routes/image-links-details.png',fullPage:true});
+
   await page.locator('#modal-cancel-btn').click();
   assert.equal(await page.locator('#btn-canvas-route').getAttribute('aria-selected'),'true');
   await page.screenshot({path:'artifacts/routes/timeline-mobile.png',fullPage:true});

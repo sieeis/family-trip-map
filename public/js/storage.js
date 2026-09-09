@@ -1,3 +1,4 @@
+import { normalizeImageUrls } from './image-links.js';
 import { findDuplicate, assertNoNewDuplicatePlaces } from './place-identity.js';
 // Local keys are retained as a backup of the old, device-only app.
 const GROUPS_KEY = 'ftm_groups';
@@ -24,6 +25,7 @@ function newPlace(data) {
         id: crypto.randomUUID(), groupId: data.groupId, naverUrl: data.naverUrl || '',
         naverPlaceId: data.naverPlaceId || '', name: data.name || '장소명 없음', address: data.address || '',
         phone: data.phone || '', category: data.category || '기타', tags: data.tags || [], notes: data.notes || '',
+        imageUrls: normalizeImageUrls(data.imageUrls),
         pinColor: data.pinColor || '', visited: false, lat: data.lat ?? null, lng: data.lng ?? null, addedAt: new Date().toISOString(),
   };
 }
@@ -193,7 +195,8 @@ export const Storage = {
     return mutate(next => {
       const index = next.places.findIndex(p => p.id === id);
       if (index === -1) throw new Error('이 장소는 다른 기기에서 삭제되었습니다.');
-      next.places[index] = { ...next.places[index], ...data, id };
+      next.places[index] = { ...next.places[index], ...data, id,
+        imageUrls: normalizeImageUrls(data.imageUrls === undefined ? next.places[index].imageUrls : data.imageUrls) };
     });
   },
   deletePlace(id) {
