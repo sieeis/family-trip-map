@@ -18,6 +18,12 @@ let failSave = false;
 const root = resolve('public');
 const server = createServer(async (req,res) => {
   try {
+    if (req.url.startsWith('/api/link-title?')) {
+      const target=new URL(req.url,'http://localhost').searchParams.get('url');
+      res.setHeader('content-type','application/json');
+      if (target.endsWith('photo-3.jpg')) {res.writeHead(422);res.end(JSON.stringify({message:'no title'}));return;}
+      res.end(JSON.stringify({title:target.endsWith('photo-1.jpg')?'메뉴판 사진':'주차장 안내'})); return;
+    }
     if (req.url === '/api/trips') {
       if (req.method === 'PUT') {
         let body = ''; for await (const chunk of req) body += chunk;
@@ -41,7 +47,7 @@ const liveSDK = process.env.LIVE_MAP_SDK === '1';
 const localOrigin = `http://127.0.0.1:${server.address().port}`;
 if (liveSDK) await page.route('https://navermap-mu.vercel.app/**', async route => {
  const request=route.request();
- const response=await fetch(localOrigin+new URL(request.url()).pathname,{method:request.method(),headers:{'content-type':'application/json'},...(request.postData()?{body:request.postData()}:{})});
+ const response=await fetch(localOrigin+new URL(request.url()).pathname+new URL(request.url()).search,{method:request.method(),headers:{'content-type':'application/json'},...(request.postData()?{body:request.postData()}:{})});
  await route.fulfill({status:response.status,contentType:response.headers.get('content-type')||'text/plain',body:Buffer.from(await response.arrayBuffer())});
 });
 const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -309,7 +315,9 @@ try {
   await page.locator('#modal-content .modal-title').getByText('경복궁',{exact:true}).waitFor();
   assert.match(await page.locator('#modal-content').textContent(),/서울 종로구 사직로 161/);
   for(let i=1;i<=3;i++) {
-    const link=page.locator('#modal-content').getByRole('link',{name:`이미지 ${i} 보기`});
+    const expected=['메뉴판 사진','주차장 안내','photo-3.jpg'][i-1];
+    const link=page.locator('#modal-content [data-image-link]').nth(i-1);
+    await link.getByText(expected,{exact:false}).waitFor();
     assert.equal(await link.getAttribute('href'),`https://example.com/photo-${i}.jpg`);
     assert.equal(await link.getAttribute('target'),'_blank');
     assert.match(await link.getAttribute('rel'),/noopener/);

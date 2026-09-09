@@ -3,6 +3,7 @@ import { routeControls } from './route-controls.js';
 import { categoryColor, placeColor } from './place-colors.js';
 import { placeLink } from './place-link.js';
 import { normalizeImageUrls } from './image-links.js';
+import { linkTitleFallback, loadLinkTitles } from './link-titles.js';
 import { icon, categoryIcon } from './icons.js';
 import { Parser } from './parser.js';
 import { bindReorder } from './reorder.js';
@@ -480,10 +481,11 @@ export const UI = {
         const attrs = `class="detail-copy" data-copy-index="${index}" title="${esc(label)} 복사" aria-label="${esc(label)} 복사: ${esc(value)}"`;
         return `<dt><button ${attrs}>${esc(label)}</button></dt><dd><button ${attrs}>${esc(value)} ${icon('copy')}</button></dd>`;
       }).join('')}</dl>
-      ${imageLinks.length ? `<div aria-label="사용자 이미지 링크" style="display:flex;flex-wrap:wrap;gap:8px 20px;">${imageLinks.map((imageUrl, index) => `<a class="detail-link" href="${esc(imageUrl)}" target="_blank" rel="noopener noreferrer">이미지 ${index + 1} 보기 ↗</a>`).join('')}</div>` : ''}
+      ${imageLinks.length ? `<div aria-label="사용자 이미지 링크" style="display:flex;flex-wrap:wrap;gap:8px 20px;">${imageLinks.map(imageUrl => `<a class="detail-link" data-image-link href="${esc(imageUrl)}" title="${esc(linkTitleFallback(imageUrl))}" target="_blank" rel="noopener noreferrer" style="max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere;">${esc(linkTitleFallback(imageUrl))} ↗</a>`).join('')}</div>` : ''}
       ${link ? `<a class="detail-link" href="${esc(link)}" target="${sameTab ? '_self' : '_blank'}" rel="noopener noreferrer">네이버지도에서 보기 ↗</a>` : ''}</div>
       <div class="modal-footer"><button class="btn btn-ghost" id="modal-cancel-btn">닫기</button></div>
     `);
+    loadLinkTitles(document.getElementById('modal-overlay'));
     document.querySelectorAll('[data-copy-index]').forEach(button => {
       button.addEventListener('click', async () => {
         const [label, value] = rows[Number(button.dataset.copyIndex)];
