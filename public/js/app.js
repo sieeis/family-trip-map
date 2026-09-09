@@ -301,8 +301,8 @@ export const App = {
       onEdit: id => {
         const route = Storage.getRoutes().find(r => r.id === id);
         if (!state.editing || !route) return;
-        RouteUI.showNameModal(route, this.orderedPlaces(route.placeIds), async data => {
-          await Storage.updateRoute(id, {name: data.name}); this.renderShared();
+        RouteUI.showEditModal(route, Storage.getPlaces(), Storage.getGroups(), async data => {
+          await Storage.updateRoute(id, data); this.renderShared();
         });
       },
       onDelete: async id => {

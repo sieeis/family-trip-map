@@ -37,16 +37,24 @@ const server = createServer(async (req,res) => {
 await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
 const browser = await chromium.launch({channel:'msedge',headless:true});
 const page = await browser.newPage({viewport:{width:1440,height:1000}});
+const liveSDK = process.env.LIVE_MAP_SDK === '1';
+const localOrigin = `http://127.0.0.1:${server.address().port}`;
+if (liveSDK) await page.route('https://navermap-mu.vercel.app/**', async route => {
+ const request=route.request();
+ const response=await fetch(localOrigin+new URL(request.url()).pathname,{method:request.method(),headers:{'content-type':'application/json'},...(request.postData()?{body:request.postData()}:{})});
+ await route.fulfill({status:response.status,contentType:response.headers.get('content-type')||'text/plain',body:Buffer.from(await response.arrayBuffer())});
+});
 const errors = []; page.on('pageerror', error => errors.push(error.message));
-await page.route('https://oapi.map.naver.com/**', route => route.fulfill({contentType:'text/javascript',body:`
+if (!liveSDK) await page.route('https://oapi.map.naver.com/**', route => route.fulfill({contentType:'text/javascript',body:`
 window.naver = {maps:{
   Map: class { constructor(id) {this.el=document.getElementById(id)} setZoom(){} setCenter(){} fitBounds(){} autoResize(){} },
   Marker: class {constructor(o){this.el=document.createElement('div');this.el.innerHTML=o.icon.content;this.el.style.cssText='position:absolute;left:'+ (o.title==='서울숲'?60:o.title==='경복궁'?290:140)+'px;top:160px';o.map.el.append(this.el)}setMap(v){if(!v)this.el.remove()}setPosition(){}setZIndex(){}},
-  InfoWindow:class {close(){}}, LatLng:class {}, Size:class {}, Point:class {}, LatLngBounds:class {extend(){}},MapTypeId:{NORMAL:'normal'},
+  Polyline:class {constructor(o){this.el=document.createElement('div');this.el.className='mock-route-line';this.el.dataset.arrow=String(!!o.endIcon);this.el.dataset.startLat=o.path[0].lat;o.map.el.append(this.el)}setMap(v){if(!v)this.el.remove()}},PointingIcon:{OPEN_ARROW:'open-arrow'},
+  InfoWindow:class {close(){}}, LatLng:class {constructor(lat,lng){this.lat=lat;this.lng=lng}}, Size:class {}, Point:class {}, LatLngBounds:class {extend(){}},MapTypeId:{NORMAL:'normal'},
   Event:{addListener(target,event,fn){target.el?.addEventListener(event,fn)},once(target,event,fn){setTimeout(fn,0)}}
 }};window.naverMapReady();`}));
 try {
-  await page.goto(`http://127.0.0.1:${server.address().port}`);
+  await page.goto(liveSDK ? 'https://navermap-mu.vercel.app' : localOrigin);
   await page.locator('.place-item').first().waitFor();
   assert.equal(await page.locator('.route-controls').count(),0);
   await page.locator('#btn-edit-mode').click();
@@ -71,7 +79,48 @@ try {
   await page.locator('.route-item').waitFor();
   assert.deepEqual(data.routes[0].placeIds,['a','c']);
   assert.deepEqual(await page.locator('.place-item').evaluateAll(rows=>rows.map(r=>r.dataset.id)),['a','c']);
+  const firstId = data.routes[0].id;
+  const editFirst = () => page.locator(`.route-item[data-id="${firstId}"] [data-route-list-action="edit"]`).click();
+  await editFirst();
+  await page.locator('#route-place-search').fill('경복');
+  await page.locator('[data-route-edit-action="add"][data-id="b"]').click();
+  await page.locator('[data-route-edit-action="up"][data-id="b"]').click();
+  assert.deepEqual(await page.locator('#route-edit-list > li').evaluateAll(rows=>rows.map(r=>r.dataset.id)),['a','b','c']);
+  await page.locator('#modal-cancel-btn').click();
+  assert.deepEqual(data.routes[0].placeIds,['a','c'],'cancel must leave stored route untouched');
+  await editFirst();
+  await page.locator('#route-place-group').selectOption('g1');
+  await page.locator('[data-route-edit-action="add"][data-id="b"]').click();
+  await page.locator('[data-route-edit-action="down"][data-id="a"]').click();
+  await page.locator('#route-edit-list [data-id="b"].reorder-handle, #route-edit-list [data-id="b"] .reorder-handle').first().press('ArrowUp');
+  assert.deepEqual(await page.locator('#route-edit-list > li').evaluateAll(rows=>rows.map(r=>r.dataset.id)),['c','b','a']);
+  const dragged = page.locator('#route-edit-list > li[data-id="a"] .reorder-handle');
+  const targetBox = await page.locator('#route-edit-list > li[data-id="c"]').boundingBox();
+  await dragged.hover(); await page.mouse.down();
+  await page.mouse.move(targetBox.x + 20,targetBox.y + 4,{steps:6});
+  await page.waitForFunction(()=>document.querySelector('#route-edit-list > li')?.dataset.id==='a');
+  await page.mouse.up();
+  await page.locator('#route-edit-list > li[data-id="a"] .reorder-handle').press('ArrowDown');
+  await page.locator('#route-edit-list > li[data-id="a"] .reorder-handle').press('ArrowDown');
+  assert.deepEqual(await page.locator('#route-edit-list > li').evaluateAll(rows=>rows.map(r=>r.dataset.id)),['c','b','a']);
+  await page.locator('[data-route-edit-action="remove"][data-id="a"]').click();
+  await page.locator('[data-route-edit-action="add"][data-id="a"]').click();
+  failSave=true;
+  await page.locator('#modal-save-btn').click();
+  await page.getByText('저장 실패 테스트',{exact:true}).waitFor();
+  await page.waitForFunction(()=>!document.getElementById('modal-save-btn').disabled);
+  assert.deepEqual(data.routes[0].placeIds,['a','c']);
+  assert.deepEqual(await page.locator('#route-edit-list > li').evaluateAll(rows=>rows.map(r=>r.dataset.id)),['c','b','a']);
+  failSave=false;
+  await page.screenshot({path:'artifacts/routes/editor-desktop.png',fullPage:true});
+  await page.locator('#modal-save-btn').click();
+  await page.waitForFunction(()=>document.getElementById('modal-overlay').style.display==='none');
+  assert.deepEqual(data.routes[0].placeIds,['c','b','a']);
+  assert.deepEqual(await page.locator('.place-item').evaluateAll(rows=>rows.map(r=>r.dataset.id)),['c','b','a']);
+  if (!liveSDK) assert.equal(await page.locator('.mock-route-line[data-arrow="true"]').count(),2);
+  await page.screenshot({path:'artifacts/routes/route-arrows.png',fullPage:true});
   await page.locator('#btn-view-groups').click();
+  if (!liveSDK) assert.equal(await page.locator('.mock-route-line').count(),0);
   await page.locator('.place-item[data-id="c"] .route-r').click();
   await page.locator('[data-draft-action="cancel"]').click();
   assert.equal(await page.locator('#route-draft-bar').isHidden(),true);
@@ -79,7 +128,7 @@ try {
   await page.reload();
   await page.locator('#btn-view-routes').click();
   await page.locator('.route-select').click();
-  assert.deepEqual(await page.locator('.place-item').evaluateAll(rows=>rows.map(r=>r.dataset.id)),['a','c']);
+  assert.deepEqual(await page.locator('.place-item').evaluateAll(rows=>rows.map(r=>r.dataset.id)),['c','b','a']);
   assert.equal(await page.locator('.route-controls').count(),0);
   await mkdir('artifacts/routes',{recursive:true});
   await page.screenshot({path:'artifacts/routes/desktop.png',fullPage:true});
@@ -98,16 +147,21 @@ try {
   await page.locator('.map-pin[data-place-id="a"]').click();
   for (const theme of ['glass','bloom','midnight']) {
     await page.evaluate(async theme => { const {Design}=await import('/js/design.js'); Design.apply(theme,false); },theme);
-    const shape = await page.locator('#map-labels .route-r').evaluate(button => ({width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height,radius:getComputedStyle(button).borderRadius}));
+    await page.waitForFunction(()=>{const button=document.querySelector('#map-labels .route-r');return button && getComputedStyle(button).borderRadius==='50%';});
+    const shape = await page.evaluate(() => {const button=document.querySelector('#map-labels .route-r'); return {width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height,radius:getComputedStyle(button).borderRadius};});
     assert.equal(shape.width,shape.height); assert.equal(shape.radius,'50%');
   }
   await page.locator('#btn-view-routes').click();
   const secondId = data.routes[1].id;
   await page.locator(`.route-item[data-id="${secondId}"] [data-route-list-action="edit"]`).click();
   await page.locator('#rf-name').fill('수정된 Route');
+  await page.locator('[data-route-edit-action="add"][data-id="b"]').click();
+  await page.locator('[data-route-edit-action="up"][data-id="b"]').click();
+  await page.screenshot({path:'artifacts/routes/editor-mobile.png',fullPage:true});
   await page.locator('#modal-save-btn').click();
   await page.waitForFunction(() => document.getElementById('modal-overlay').style.display === 'none');
   assert.equal(data.routes[1].name,'수정된 Route');
+  assert.deepEqual(data.routes[1].placeIds,['b','a']);
   await page.locator(`.route-item[data-id="${secondId}"] [data-route-list-action="delete"]`).click();
   await page.locator('#confirm-yes').click();
   await page.waitForFunction(() => document.querySelectorAll('.route-item').length === 1);
@@ -115,5 +169,5 @@ try {
   await page.locator('#btn-view-groups').click();
   assert.equal(await page.locator('#group-content').isVisible(),true);
   assert.deepEqual(errors,[]);
-  console.log('PASS: cross-group order, map/list controls, removal/renumber, failed save retry, cancel, reload, read-only, desktop/mobile.');
+  console.log('PASS: route editor search/group/add/remove, drag/keyboard/buttons order, atomic retry/cancel/reload, direction arrows, desktop/mobile; SDK='+ (liveSDK?'live':'mock') + '; storage=in-memory.');
 } catch (error) { await page.screenshot({path:'artifacts/routes/failure.png',fullPage:true}); console.log('Page errors', errors); throw error; } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); }

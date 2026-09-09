@@ -1,5 +1,6 @@
 // public/js/map.js
 import { routeControls } from './route-controls.js';
+import { routeSegments } from './route-lines.js';
 import { placeColor } from './place-colors.js';
 import { categoryIcon } from './icons.js';
 import { shortName, availableLabels } from './map-labels.js';
@@ -25,6 +26,7 @@ let _routeIds = [];
 let _routeEditing = false;
 let _draftIds = [];
 let _onRouteAction = null;
+let _routeLines = [];
 
 export const MapModule = {
   onRouteAction(callback) { _onRouteAction = callback; },
@@ -147,6 +149,7 @@ export const MapModule = {
     this._clearMarkers();
     const validPlaces = _places.filter(p => p.lat !== null && p.lng !== null && Number.isFinite(p.lat) && Number.isFinite(p.lng));
     validPlaces.forEach(place => this._addMarker(place));
+    this._renderRouteLines();
     const positions = JSON.stringify(validPlaces.map(p => [p.id, p.lat, p.lng]).sort((a, b) => a[0].localeCompare(b[0])));
     if (positions !== _positionSignature) this._applySelection();
     else if (_selection?.type === 'place') this._showName(_selection.id);
@@ -163,11 +166,35 @@ export const MapModule = {
   },
 
   _clearMarkers() {
+    _routeLines.forEach(line => line.setMap(null));
+    _routeLines = [];
+    const routeStatus = document.getElementById?.('map-route-status');
+    if (routeStatus) routeStatus.hidden = true;
     _markers.forEach(m => m.setMap(null));
     _markers = [];
     if (_infoWindow) _infoWindow.close();
     const layer = document.getElementById?.('map-labels');
     if (layer) layer.innerHTML = '';
+  },
+
+  _renderRouteLines() {
+    const segments = routeSegments(_routeIds, _places);
+    for (const { from, to } of segments) {
+      // Put the direction arrow halfway along the leg so destination pins cannot hide it.
+      const start = new naver.maps.LatLng(from.lat, from.lng);
+      const middle = new naver.maps.LatLng((from.lat + to.lat) / 2, (from.lng + to.lng) / 2);
+      const end = new naver.maps.LatLng(to.lat, to.lng);
+      const style = {map: _map, strokeColor: '#2563eb', strokeWeight: 4, strokeOpacity: 0.9, clickable: false, zIndex: 1};
+      _routeLines.push(new naver.maps.Polyline({...style, path: [middle, end]}));
+      _routeLines.push(new naver.maps.Polyline({...style, path: [start, middle], endIcon: naver.maps.PointingIcon.OPEN_ARROW, endIconSize: 14}));
+    }
+    const status = document.getElementById?.('map-route-status');
+    if (status) {
+      status.hidden = _routeIds.length < 2;
+      status.textContent = segments.length ? '방문 순서 → 직선 연결' : '연결할 장소의 좌표가 없습니다';
+      if (segments.length && segments.length < _routeIds.length - 1) status.textContent += ' · 일부 구간 생략';
+      status.title = '방문 순서를 직선으로 연결합니다. 실제 도로·도보 경로가 아니며, 좌표가 없거나 필터로 숨긴 장소의 구간은 생략합니다.';
+    }
   },
 
   fitGroup() {

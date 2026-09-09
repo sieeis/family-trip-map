@@ -10,6 +10,7 @@ test('queued first selection centers after SDK init; groups refit and unchanged 
     }
   });
   const counters = { scripts: 0, maps: 0, markers: 0, fit: 0, pan: 0, zoom: 0 };
+  const lines = [];
   let markerClick;
   let details = 0;
   let center;
@@ -34,6 +35,8 @@ test('queued first selection centers after SDK init; groups refit and unchanged 
   } });
   Object.defineProperty(globalThis, 'naver', { configurable: true, value: { maps: {
     Map: class { constructor() { counters.maps++; } fitBounds(bounds, options) { counters.fit++; assert.equal(options.top, 64); } setCenter(point) { center = point; counters.pan++; } setZoom() { counters.zoom++; } autoResize() {} },
+    Polyline: class { constructor(options) { this.options=options;this.map=options.map;lines.push(this); } setMap(map) {this.map=map;} },
+    PointingIcon: {OPEN_ARROW:'open-arrow'},
     InfoWindow: class { constructor(options) { assert.equal(options.disableAutoPan, true); } close() {} setContent(value) { label = value; } open() {} },
     Marker: class { constructor(options) { counters.markers++; if (options.title === '내 현재 위치') return; assert.match(options.icon.content, /stroke="#172033"/); assert.match(options.icon.content, /<svg/); } setMap() {} setPosition() {} },
     LatLng: class { constructor(lat, lng) { this.lat = lat; this.lng = lng; } }, Size: class {}, LatLngBounds: class { extend() {} }, Point: class {},
@@ -83,4 +86,27 @@ test('queued first selection centers after SDK init; groups refit and unchanged 
   assert.equal(counters.zoom, previousZoom, 'resize after locate must preserve zoom');
   await MapModule.load();
   assert.equal(counters.scripts, 1);
+  const beforeRoute = counters.pan;
+  MapModule.setRoute(['a','b']);
+  assert.equal(lines.filter(line=>line.map).length,2);
+  let arrow=lines.find(line=>line.map && line.options.endIcon);
+  assert.equal(arrow.options.endIcon,'open-arrow');
+  assert.equal(arrow.options.path[0].lat,34);
+  assert.equal(arrow.options.path[1].lat,34.5);
+  assert.equal(counters.pan,beforeRoute,'route overlay must preserve camera');
+  MapModule.setRoute(['a','b']);
+  assert.equal(lines.length,2,'same route should reuse overlays');
+  MapModule.setRoute(['b','a']);
+  assert.equal(lines.filter(line=>line.map).length,2,'reordering removes previous overlays');
+  arrow=lines.find(line=>line.map && line.options.endIcon);
+  assert.equal(arrow.options.path[0].lat,35);
+  MapModule.showPlaces([places[0]]);
+  assert.equal(lines.filter(line=>line.map).length,0,'filtered place breaks leg');
+  MapModule.showPlaces(places);
+  assert.equal(lines.filter(line=>line.map).length,2);
+  MapModule.setRoute([]);
+  assert.equal(lines.filter(line=>line.map).length,0,'cancel clears path');
+  MapModule.setRoute(['a','b']);
+  MapModule.clearMarkers();
+  assert.equal(lines.filter(line=>line.map).length,0,'group deletion clears path');
 });

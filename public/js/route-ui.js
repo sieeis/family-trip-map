@@ -86,6 +86,100 @@ export const RouteUI = {
       finally { UI._saving = false; save.disabled = false; }
     });
   },
+  showEditModal(route, allPlaces, groups, onSave) {
+    if (!UI._editing || UI._saving) return;
+    const places = new Map(allPlaces.map(place => [place.id, place]));
+    const groupNames = new Map(groups.map(group => [group.id, group.name]));
+    let selected = [...new Set(route.placeIds)].filter(id => places.has(id));
+    let saving = false;
+    UI._openModal(`<div class="modal-header"><span class="modal-title" id="route-edit-title">Route 수정</span><button class="modal-close" id="modal-close-btn" aria-label="닫기">${icon('close')}</button></div>
+      <div class="modal-body route-editor"><div class="form-group"><label for="rf-name" class="form-label">Route 이름 *</label><input id="rf-name" class="form-input" maxlength="200" value="${esc(route.name)}" required /></div>
+      <section aria-labelledby="route-edit-order-title"><h3 id="route-edit-order-title" class="route-editor-heading">방문 순서 <span id="route-edit-count"></span></h3><p class="route-modal-help">위아래 버튼이나 손잡이를 드래그해 순서를 바꾸세요. 손잡이에 초점을 두고 방향키로도 이동할 수 있습니다.</p><ol id="route-edit-list" class="route-edit-list" aria-label="방문할 장소 순서"></ol></section>
+      <section class="route-editor-add" aria-labelledby="route-edit-add-title"><h3 id="route-edit-add-title" class="route-editor-heading">장소 추가</h3><p class="route-modal-help">모든 그룹에서 장소를 찾아 추가할 수 있습니다. 선택한 장소는 마지막 순서에 추가됩니다.</p><div class="route-editor-filters"><div><label for="route-place-search" class="form-label">장소 검색</label><input id="route-place-search" class="form-input" type="search" placeholder="장소 이름 또는 주소" /></div><div><label for="route-place-group" class="form-label">그룹</label><select id="route-place-group" class="form-select"><option value="">모든 그룹</option>${groups.map(group => `<option value="${esc(group.id)}">${esc(group.name)}</option>`).join('')}</select></div></div><p id="route-place-result-count" class="route-modal-help" role="status" aria-live="polite"></p><ul id="route-place-results" class="route-place-results" aria-label="추가할 수 있는 장소"></ul></section>
+      <p id="route-edit-status" class="route-modal-help" role="status" aria-live="polite"></p></div><div class="modal-footer"><button class="btn btn-ghost" id="modal-cancel-btn">취소</button><button class="btn btn-primary" id="modal-save-btn">수정 완료</button></div>`);
+    const modal = document.getElementById('modal-content');
+    const list = document.getElementById('route-edit-list');
+    const results = document.getElementById('route-place-results');
+    const search = document.getElementById('route-place-search');
+    const group = document.getElementById('route-place-group');
+    const nameInput = document.getElementById('rf-name');
+    const save = document.getElementById('modal-save-btn');
+    const status = document.getElementById('route-edit-status');
+    const placeText = place => `<span class="route-editor-place-name">${esc(place.name)}</span><span class="route-editor-place-meta">${esc(groupNames.get(place.groupId) || '그룹 없음')}${place.address ? ` · ${esc(place.address)}` : ''}</span>`;
+    const focusAction = (id, action) => [...list.querySelectorAll('button')].find(button => (button.dataset.id || button.closest('li')?.dataset.id) === id && (action === 'handle' ? button.classList.contains('reorder-handle') : button.dataset.routeEditAction === action))?.focus();
+    const renderSelected = () => {
+      list._reorderCleanup?.();
+      document.getElementById('route-edit-count').textContent = `${selected.length}개 장소`;
+      list.innerHTML = selected.length ? selected.map((id, index) => {
+        const place = places.get(id);
+        return `<li class="route-edit-row" data-id="${esc(id)}"><button class="reorder-handle btn-icon" aria-label="${esc(place.name)} 순서 이동" title="드래그 또는 위아래 방향키로 이동">${icon('grip')}</button><span class="route-editor-number" aria-label="${index + 1}번째">${index + 1}</span><div class="route-editor-place">${placeText(place)}</div><div class="route-editor-actions"><button class="btn-icon" data-route-edit-action="up" data-id="${esc(id)}" aria-label="${esc(place.name)} 위로" ${index === 0 ? 'disabled' : ''}>↑</button><button class="btn-icon" data-route-edit-action="down" data-id="${esc(id)}" aria-label="${esc(place.name)} 아래로" ${index === selected.length - 1 ? 'disabled' : ''}>↓</button><button class="btn-icon" data-route-edit-action="remove" data-id="${esc(id)}" aria-label="${esc(place.name)} Route에서 삭제">−</button></div></li>`;
+      }).join('') : '<li class="route-editor-empty">방문할 장소가 없습니다. 아래에서 장소를 추가하세요.</li>';
+      bindReorder(list, ids => {
+        if (saving || !UI._editing) return;
+        const focusedId = document.activeElement?.closest('li')?.dataset.id;
+        selected = ids;
+        renderSelected();
+        if (focusedId) focusAction(focusedId, 'handle');
+        status.textContent = '방문 순서를 변경했습니다. 수정 완료를 눌러 저장하세요.';
+      });
+    };
+    const renderResults = () => {
+      const query = search.value.trim().toLocaleLowerCase();
+      const chosen = new Set(selected);
+      const matches = allPlaces.filter(place => !chosen.has(place.id) && (!group.value || place.groupId === group.value) && (!query || `${place.name} ${place.address || ''}`.toLocaleLowerCase().includes(query)));
+      document.getElementById('route-place-result-count').textContent = matches.length > 100 ? `${matches.length}개 중 100개 표시 · 검색이나 그룹으로 범위를 좁혀주세요.` : `추가 가능한 장소 ${matches.length}개`;
+      results.innerHTML = matches.length ? matches.slice(0, 100).map(place => `<li class="route-place-result"><div class="route-editor-place">${placeText(place)}</div><button class="btn btn-sm btn-ghost" data-route-edit-action="add" data-id="${esc(place.id)}" aria-label="${esc(place.name)} Route에 추가">+ 추가</button></li>`).join('') : '<li class="route-editor-empty">추가할 장소가 없습니다.</li>';
+    };
+    const controller = new AbortController();
+    modal.addEventListener('click', event => {
+      const button = event.target.closest('[data-route-edit-action]');
+      if (!button || button.disabled || saving || !UI._editing) return;
+      const { id, routeEditAction: action } = button.dataset;
+      const index = selected.indexOf(id);
+      if (action === 'add' && index === -1 && places.has(id)) selected.push(id);
+      else if (action === 'remove' && index >= 0) selected.splice(index, 1);
+      else if (action === 'up' && index > 0) [selected[index - 1], selected[index]] = [selected[index], selected[index - 1]];
+      else if (action === 'down' && index >= 0 && index < selected.length - 1) [selected[index + 1], selected[index]] = [selected[index], selected[index + 1]];
+      else return;
+      renderSelected();
+      renderResults();
+      if (action === 'add') { focusAction(id, 'handle'); status.textContent = `${places.get(id).name}을(를) ${selected.length}번째 장소로 추가했습니다.`; }
+      else if (action === 'remove') { const nextId = selected[Math.min(index, selected.length - 1)]; if (nextId) focusAction(nextId, 'handle'); else search.focus(); status.textContent = `${places.get(id).name}을(를) Route에서 삭제했습니다.`; }
+      else { focusAction(id, 'handle'); status.textContent = `${places.get(id).name}의 방문 순서를 ${selected.indexOf(id) + 1}번째로 변경했습니다.`; }
+    }, { signal: controller.signal });
+    UI._onModalClose = () => { list._reorderCleanup?.(); controller.abort(); };
+    search.addEventListener('input', renderResults);
+    group.addEventListener('change', renderResults);
+    nameInput.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); save.click(); } });
+    save.addEventListener('click', async () => {
+      if (saving || !UI._editing) return;
+      const name = nameInput.value.trim();
+      if (!name) { UI.showToast('Route 이름을 입력해주세요.', 'error'); nameInput.focus(); return; }
+      saving = true;
+      UI._saving = true;
+      list._reorderCleanup?.();
+      const controls = [...modal.querySelectorAll('button, input, select')].map(control => [control, control.disabled]);
+      controls.forEach(([control]) => { control.disabled = true; });
+      save.textContent = '저장 중…';
+      try {
+        await onSave({ name, placeIds: [...selected] });
+        UI._saving = false;
+        UI.closeModal();
+      } catch (error) {
+        UI.showToast(error.message || 'Route를 저장하지 못했습니다. 다시 시도해주세요.', 'error');
+        status.textContent = '저장하지 못했습니다. 변경 내용은 유지됩니다. 다시 시도해주세요.';
+        renderSelected();
+      } finally {
+        saving = false;
+        UI._saving = false;
+        controls.forEach(([control, disabled]) => { control.disabled = disabled; });
+        save.textContent = '수정 완료';
+      }
+    });
+    renderSelected();
+    renderResults();
+    nameInput.focus();
+  },
   showDetails(route, places, onSelect) {
     if (UI._saving) return;
     const ordered = byId(route.placeIds, places);
