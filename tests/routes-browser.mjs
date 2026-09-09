@@ -278,6 +278,12 @@ try {
   await page.locator('#btn-canvas-route').click();
   assert.equal(await page.locator('#btn-canvas-route').getAttribute('aria-selected'),'true');
   assert.deepEqual(await page.locator('.route-node').evaluateAll(nodes=>nodes.map(n=>n.dataset.placeId)),['b','c']);
+  const horizontalNodes = await page.locator('.route-node').evaluateAll(nodes => nodes.map(node => {
+    const r=node.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height};
+  }));
+  assert.ok(horizontalNodes[1].x > horizontalNodes[0].x + horizontalNodes[0].width,'nodes run left to right');
+  assert.ok(Math.abs(horizontalNodes[1].y-horizontalNodes[0].y)<2,'nodes share one horizontal row');
+  assert.ok(horizontalNodes.every(node=>node.width<=280),'cards stay compact');
   const palace=page.locator('.route-node[data-place-id="b"]');
   await palace.getByText('서울 종로구 사직로 161',{exact:true}).waitFor();
   assert.match(await palace.textContent(),/입장 시간 확인/);
@@ -306,12 +312,29 @@ try {
     await Storage.updateRoute(route.id,{placeIds:[]});
     Storage.setEditing(false); App.renderShared(); return route.id;
   });
-  await page.locator('#route-canvas-select').selectOption(emptyRouteId);
+  await page.locator(`[data-route-select="${emptyRouteId}"]`).click();
   assert.equal(await page.locator('#btn-canvas-route').getAttribute('aria-selected'),'true');
-  assert.equal(await page.locator('.route-node').count(),0);
-  await page.locator('#route-canvas-select').selectOption(firstId);
+  assert.equal(await page.locator(`.route-canvas-route[data-route-id="${emptyRouteId}"] .route-node`).count(),0);
+  assert.equal(await page.locator('.route-canvas-route').count(),2,'all saved routes stay visible');
+  await page.locator(`[data-route-select="${firstId}"]`).click();
   assert.deepEqual(await page.locator('.route-node').evaluateAll(nodes=>nodes.map(n=>n.dataset.placeId)),['b','c']);
 
+  await page.evaluate(async()=>{
+    const {Storage}=await import('/js/storage.js'); const {App}=await import('/js/app.js');
+    Storage.setEditing(true);
+    for(let i=0;i<6;i++) await Storage.addRoute({name:`여행 코스 ${i+1}`,placeIds:['a','b','c']});
+    Storage.setEditing(false); App.renderShared();
+  });
+  assert.equal(await page.locator('.route-canvas-route').count(),8);
+  assert.equal(await page.locator('#route-canvas').evaluate(el=>el.scrollHeight>el.clientHeight),true,'many routes scroll vertically');
+  await page.screenshot({path:'artifacts/routes/horizontal-routes-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.screenshot({path:'artifacts/routes/horizontal-routes-mobile.png',fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'route overflow stays inside panel');
+  const secondNode=page.locator(`.route-canvas-route[data-route-id="${firstId}"] .route-node[data-place-id="c"]`);
+  await secondNode.click();
+  await page.locator('#modal-content .modal-title').getByText('해운대',{exact:true}).waitFor();
+  await page.locator('#modal-cancel-btn').click();
   await page.reload();
   assert.equal(await page.locator('#btn-canvas-map').getAttribute('aria-selected'),'true','reload starts with Map');
   assert.deepEqual(errors,[]);

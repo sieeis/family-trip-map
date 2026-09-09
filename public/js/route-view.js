@@ -17,8 +17,9 @@ export const RouteView = {
         document.getElementById(`btn-canvas-${next}`).focus();
       });
     });
-    document.getElementById('route-canvas-select').addEventListener('change', event => onSelect(event.target.value));
     document.getElementById('route-canvas-content').addEventListener('click', event => {
+      const heading = event.target.closest('[data-route-select]');
+      if (heading) onSelect(heading.dataset.routeSelect);
       const node = event.target.closest('[data-route-place]');
       if (node) onPlace(node.dataset.routePlace);
     });
@@ -43,22 +44,20 @@ export const RouteView = {
   },
 
   render(routes, currentRouteId, places) {
-    const selector = document.getElementById('route-canvas-select');
-    const route = routes.find(item => item.id === currentRouteId) || routes[0];
-    selector.innerHTML = `${route ? '' : '<option value="">Route를 선택하세요</option>'}${routes.map(item => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}`;
-    selector.value = route?.id || '';
-    selector.disabled = routes.length === 0;
-    const ids = route?.placeIds || [];
-    document.getElementById('route-canvas-count').textContent = route ? `${ids.length}개 장소` : `${routes.length}개 Route`;
     const content = document.getElementById('route-canvas-content');
-    if (!route || !ids.length) {
-      const message = !routes.length ? '아직 등록된 Route가 없습니다.' : !route ? '방문 순서를 볼 Route를 선택하세요.' : '이 Route에 등록된 장소가 없습니다.';
-      const hint = !routes.length ? '왼쪽 Route 목록에서 방문할 장소들을 묶어보세요.' : !route ? '위 목록에서 Route를 선택하면 장소들이 순서대로 표시됩니다.' : 'Route 수정에서 방문할 장소를 추가해보세요.';
-      content.innerHTML = `<div class="route-canvas-empty">${icon('map')}<p>${message}</p><span>${hint}</span></div>`;
+    const scrollPositions = new Map([...content.querySelectorAll('.route-canvas-route')].map(section => [section.dataset.routeId, section.querySelector('.route-timeline')?.scrollLeft || 0]));
+    const focusedRoute = document.activeElement?.dataset.routeSelect;
+    document.getElementById('route-canvas-count').textContent = `${routes.length}개 Route`;
+    if (!routes.length) {
+      content.innerHTML = `<div class="route-canvas-empty">${icon('map')}<p>아직 등록된 Route가 없습니다.</p><span>왼쪽 Route 목록에서 방문할 장소들을 묶어보세요.</span></div>`;
       return;
     }
     const byId = new Map(places.map(place => [place.id, place]));
-    content.innerHTML = `<ol class="route-timeline" aria-label="${esc(route.name)} 방문 순서">${ids.map((id, index) => {
+    content.innerHTML = routes.map(route => {
+      const ids = route.placeIds || [];
+      return `<section class="route-canvas-route${route.id === currentRouteId ? ' is-selected' : ''}" data-route-id="${esc(route.id)}">
+        <div class="route-section-heading"><h3><button type="button" data-route-select="${esc(route.id)}" aria-pressed="${route.id === currentRouteId}">${esc(route.name)}</button></h3><span>${ids.length}개 장소</span></div>
+        ${!ids.length ? '<p class="route-section-empty">등록된 장소가 없습니다. Route 수정에서 장소를 추가해보세요.</p>' : `<ol class="route-timeline" tabindex="0" aria-label="${esc(route.name)} 방문 순서">${ids.map((id, index) => {
       const place = byId.get(id);
       if (!place) return `<li class="route-timeline-stop"><span class="route-node-number">${index + 1}</span><div class="route-node route-node-missing">등록 정보를 찾을 수 없는 장소</div></li>`;
       return `<li class="route-timeline-stop" style="--route-pin-color:${placeColor(place)};--route-category-color:${categoryColor(place)}">
@@ -74,6 +73,12 @@ export const RouteView = {
           <span class="route-node-detail" aria-hidden="true">${icon('info')}</span>
         </button>
       </li>`;
-    }).join('')}</ol>`;
+    }).join('')}</ol>`}</section>`;
+    }).join('');
+    content.querySelectorAll('.route-canvas-route').forEach(section => {
+      const timeline = section.querySelector('.route-timeline');
+      if (timeline) timeline.scrollLeft = scrollPositions.get(section.dataset.routeId) || 0;
+      if (section.dataset.routeId === focusedRoute) section.querySelector('[data-route-select]').focus({ preventScroll: true });
+    });
   },
 };
